@@ -20,14 +20,12 @@ ACCOUNT_MIN_AGE_DAYS = 30
 
 # --- Intents ---
 intents = discord.Intents.default()
-
-# Required for member tracking, role changes, invites, etc.
-intents.members = True       # needed for member joins/leaves and role updates
-intents.guilds = True        # needed for guild info (roles, invites)
-intents.invites = True       # track invite creation/deletion
-intents.presences = False    # not needed, optional
-intents.messages = False     # not needed for this bot
-intents.message_content = False  # only needed if using text-based commands
+intents.members = True
+intents.guilds = True
+intents.invites = True
+intents.presences = False
+intents.messages = False
+intents.message_content = False
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
@@ -86,7 +84,7 @@ async def get_inviter_for_invitee(invitee_id: int):
             "SELECT inviter_id, members_awarded, striker_awarded, valid_account FROM invite_map WHERE invitee_id = ?",
             (str(invitee_id),),
         )
-        row = await cur.fetchone()  # <-- was missing await
+        row = await cur.fetchone()
         if row:
             return {
                 "inviter_id": int(row[0]),
@@ -112,7 +110,7 @@ async def save_invite_link(code: str, creator_id: int):
 async def get_creator_by_code(code: str):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT creator_id FROM invite_links WHERE code = ?", (code,))
-        row = await cur.fetchone()  # <-- was missing await
+        row = await cur.fetchone()
         if row:
             return int(row[0])
         return None
@@ -135,20 +133,23 @@ async def top_n_inviters(n=10):
 @bot.event
 async def on_ready():
     await init_db()
-    # Cache invites for all guilds
+    guild_invites_cache.clear()
+
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
             guild_invites_cache[guild.id] = {invite.code: invite.uses for invite in invites}
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] Could not fetch invites for {guild.name}: {e}")
             guild_invites_cache[guild.id] = {}
-    print(f"Bot ready: {bot.user}")
+
+    print(f"✅ Bot ready: {bot.user}")
     try:
         await tree.sync()
     except Exception as e:
         print("Command sync failed:", e)
 
-# Create personal invite link
+# -------------------- INVITE COMMAND --------------------
 @tree.command(name="getinvite", description="Generate your personal server invite link")
 async def getinvite(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -160,15 +161,13 @@ async def getinvite(interaction: discord.Interaction):
     except discord.Forbidden:
         await interaction.followup.send("I don't have permission to create invites in this channel.", ephemeral=True)
 
-# Detect which invite was used on join
+# -------------------- MEMBER JOIN --------------------
 @bot.event
 async def on_member_join(member):
     guild = member.guild
     account_age = datetime.now(timezone.utc) - member.created_at
-    print(f"[DEBUG] on_member_join: {member} | used_inviter={used_inviter} | used_code={used_code}")
     valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
 
-    # Refresh invites
     try:
         invites_after = await guild.invites()
     except Exception:
@@ -184,18 +183,33 @@ async def on_member_join(member):
         if inv.uses > before_uses:
             used_code = inv.code
             creator_id = await get_creator_by_code(inv.code)
-            used_inviter = creator_id if creator_id else (inv.inviter.id if inv.inviter else None)
+            used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
             break
 
     # update cache
     guild_invites_cache[guild.id] = {invite.code: invite.uses for invite in invites_after}
 
+    print(f"[DEBUG] on_member_join: {member} | used_inviter={used_inviter} | used_code={used_code}")
+
     if used_inviter:
         await set_invite_map(member.id, used_inviter, valid_account, used_code)
 
-# Award/remove points when roles change
+        # ✅ award points immediately if they already have roles
+        members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+        striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
+        if members_role and members_role in member.roles:
+            await add_points(used_inviter, 1)
+            await set_awarded_flags(member.id, members_awarded=True)
+        if striker_role and striker_role in member.roles:
+            await add_points(used_inviter, 2)
+            await set_awarded_flags(member.id, striker_awarded=True)
+
+# -------------------- MEMBER UPDATE --------------------
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
+    print(f"[DEBUG] on_member_update fired for {after}.")
+
     before_roles = set(r.id for r in before.roles)
     after_roles = set(r.id for r in after.roles)
 
@@ -217,20 +231,24 @@ async def on_member_update(before: discord.Member, after: discord.Member):
         if members_role.id in added and not inviter_record["members_awarded"]:
             await add_points(inviter_id, 1)
             await set_awarded_flags(after.id, members_awarded=True)
+            print(f"[POINTS] +1 for inviter {inviter_id} (Members role).")
         elif members_role.id in removed and inviter_record["members_awarded"]:
             await add_points(inviter_id, -1)
             await set_awarded_flags(after.id, members_awarded=False)
+            print(f"[POINTS] -1 for inviter {inviter_id} (Members role removed).")
 
     # Striker role +2
     if striker_role:
         if striker_role.id in added and not inviter_record["striker_awarded"]:
             await add_points(inviter_id, 2)
             await set_awarded_flags(after.id, striker_awarded=True)
+            print(f"[POINTS] +2 for inviter {inviter_id} (Striker role).")
         elif striker_role.id in removed and inviter_record["striker_awarded"]:
             await add_points(inviter_id, -2)
             await set_awarded_flags(after.id, striker_awarded=False)
+            print(f"[POINTS] -2 for inviter {inviter_id} (Striker role removed).")
 
-# Leaderboard command
+# -------------------- LEADERBOARD --------------------
 @tree.command(name="leaderboard", description="Show top 10 inviters")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -238,6 +256,7 @@ async def leaderboard(interaction: discord.Interaction):
     if not rows:
         await interaction.followup.send("No points yet.")
         return
+
     embed = discord.Embed(title="Invite Leaderboard", color=discord.Color.blurple(), timestamp=datetime.now(timezone.utc))
     for i, (user_id, points) in enumerate(rows, start=1):
         try:
@@ -246,9 +265,10 @@ async def leaderboard(interaction: discord.Interaction):
         except:
             name = str(user_id)
         embed.add_field(name=f"#{i} — {name}", value=f"Points: {points}", inline=False)
+
     await interaction.followup.send(embed=embed)
 
-# Reset command
+# -------------------- RESET --------------------
 @tree.command(name="reset", description="Reset all inviter points (Moderators only)")
 @app_commands.checks.has_permissions(manage_guild=True)
 async def reset(interaction: discord.Interaction):
@@ -263,7 +283,7 @@ async def reset_error(interaction, error):
     else:
         await interaction.response.send_message(f"Error: {error}", ephemeral=True)
 
-# Keep invite cache updated
+# -------------------- INVITE CACHE UPDATES --------------------
 @bot.event
 async def on_invite_create(invite):
     guild_invites_cache.setdefault(invite.guild.id, {})
@@ -279,4 +299,5 @@ async def on_invite_delete(invite):
 if __name__ == "__main__":
     if not TOKEN:
         raise SystemExit("DISCORD_TOKEN not set")
+    print("Starting bot...")
     bot.run(TOKEN)
