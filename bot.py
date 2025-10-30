@@ -30,7 +30,7 @@ intents.message_content = False
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-DB_PATH = "invites.db"
+DB_PATH = "/data/db/betstrike.db"
 guild_invites_cache = {}
 
 # -------------------- DATABASE --------------------
