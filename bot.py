@@ -254,31 +254,45 @@ async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     rows = await top_n_inviters(10)
 
+    # prize structure (1st → 10th)
+    prize_map = [350, 250, 150, 60, 50, 45, 35, 30, 20, 10]
+
+    # rank emojis or numbers
+    rank_emojis = ["🥇", "🥈", "🥉"] + [f"#{i}" for i in range(4, 11)]
+
     embed = discord.Embed(
-        title="🏆  **Top 10 Inviters Leaderboard**",
-        description="Here are the legends bringing in new members!",
-        color=discord.Color.purple(),
+        title="💰🏆  **BETSTRIKE INVITER CHAMPIONS!**  🏆💰",
+        description=(
+            "🔥 The **Top 10 Inviters** of the month! 🔥\n\n"
+            "💸 Each top inviter wins a share of **$1,000 USD** 💸\n"
+            "Invite more, climb higher — earn real rewards! 👑"
+        ),
+        color=discord.Color.gold(),
         timestamp=datetime.now(timezone.utc)
     )
 
-    if not rows:
-        embed.add_field(
-            name="No inviters yet!",
-            value="Be the first to invite someone and earn points!",
-            inline=False
-        )
-    else:
-        for i, (user_id, points) in enumerate(rows, start=1):
+    # Fill leaderboard (always show 10)
+    for i in range(10):
+        prize = prize_map[i]
+        rank = rank_emojis[i]
+
+        if i < len(rows):
+            user_id, points = rows[i]
             try:
                 user = await bot.fetch_user(user_id)
                 name = f"{user.name}#{user.discriminator}"
             except:
                 name = str(user_id)
-            embed.add_field(
-                name=f"#{i} — {name}",
-                value=f"Points: {points}",
-                inline=False
-            )
+            value = f"💵 **${prize} prize** — **POINTS:** {points}"
+        else:
+            name = "— No one yet —"
+            value = f"💵 **${prize} prize** — **POINTS:** 0"
+
+        embed.add_field(
+            name=f"{rank} — {name}",
+            value=value,
+            inline=False
+        )
 
     await interaction.followup.send(embed=embed)
 
