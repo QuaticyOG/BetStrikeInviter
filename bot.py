@@ -291,7 +291,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
 
     inviter_id = inviter_record["inviter_id"]
 
-    # Members role +1
+    # Members role +1 / -1
     if members_role:
         if members_role.id in added and not inviter_record["members_awarded"]:
             await add_points(inviter_id, 1)
@@ -302,7 +302,7 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             await set_awarded_flags(after.id, members_awarded=False)
             print(f"[POINTS] -1 for inviter {inviter_id} (Members role removed).")
 
-    # Striker role +2
+    # Striker role +2 / -2
     if striker_role:
         if striker_role.id in added and not inviter_record["striker_awarded"]:
             await add_points(inviter_id, 2)
@@ -312,6 +312,39 @@ async def on_member_update(before: discord.Member, after: discord.Member):
             await add_points(inviter_id, -2)
             await set_awarded_flags(after.id, striker_awarded=False)
             print(f"[POINTS] -2 for inviter {inviter_id} (Striker role removed).")
+
+
+# -------------------- MEMBER REMOVE --------------------
+@bot.event
+async def on_member_remove(member: discord.Member):
+    inviter_record = await get_inviter_for_invitee(member.id)
+    if not inviter_record or inviter_record["inviter_id"] == 0 or not inviter_record["valid_account"]:
+        return
+
+    inviter_id = inviter_record["inviter_id"]
+    guild = member.guild
+
+    # Get roles for clarity (not used directly but kept consistent)
+    members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+    striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
+    # Subtract points if they had them
+    if inviter_record["members_awarded"]:
+        await add_points(inviter_id, -1)
+        await set_awarded_flags(member.id, members_awarded=False)
+        print(f"[POINTS] -1 for inviter {inviter_id} (invitee left with Members role).")
+
+    if inviter_record["striker_awarded"]:
+        await add_points(inviter_id, -2)
+        await set_awarded_flags(member.id, striker_awarded=False)
+        print(f"[POINTS] -2 for inviter {inviter_id} (invitee left with Striker role).")
+
+    # Optional: delete invite mapping so rejoining counts as a new invite
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
+        await db.commit()
+        print(f"[DEBUG] Removed invite map for {member.id}")
+
 
 # -------------------- LEADERBOARD --------------------
 @tree.command(name="leaderboard", description="Show top 10 inviters")
