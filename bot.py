@@ -18,7 +18,7 @@ STRIKER_ROLE_NAME = "Striker"   # +2 points
 # Minimum account age for points
 ACCOUNT_MIN_AGE_DAYS = 30
 
-# --- Intents ---
+# --- Intents --
 intents = discord.Intents.default()
 intents.members = True
 intents.guilds = True
