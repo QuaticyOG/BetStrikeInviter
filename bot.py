@@ -261,15 +261,18 @@ async def leaderboard(interaction: discord.Interaction):
     rank_emojis = ["🥇", "🥈", "🥉"] + [f"#{i}" for i in range(4, 11)]
 
     embed = discord.Embed(
-        title="💰🏆  **BETSTRIKE INVITER CHAMPIONS!**  🏆💰",
+        title="💜🏆  **BETSTRIKE INVITER CHAMPIONS!**  🏆💜",
         description=(
-            "🔥 The **Top 10 Inviters** of the month! 🔥\n\n"
-            "💸 Each top inviter wins a share of **$1,000 USD** 💸\n"
+            "🔥 **The Top 10 Inviters of the Month!** 🔥\n\n"
+            "💸 **Each top inviter wins a share of $1,000 USD!** 💸\n"
             "Invite more, climb higher — earn real rewards! 👑"
         ),
-        color=discord.Color.gold(),
+        color=discord.Color.purple(),
         timestamp=datetime.now(timezone.utc)
     )
+
+    # center description text by adding invisible spaces
+    embed.description = f"‎\n{text_center(embed.description)}\n‎"
 
     # Fill leaderboard (always show 10)
     for i in range(10):
@@ -288,13 +291,26 @@ async def leaderboard(interaction: discord.Interaction):
             name = "— No one yet —"
             value = f"💵 **${prize} prize** — **POINTS:** 0"
 
+        # add centered text formatting
+        name_centered = f"‎\n{text_center(f'{rank} — {name}')}\n‎"
+        value_centered = f"‎\n{text_center(value)}\n‎"
+
         embed.add_field(
-            name=f"{rank} — {name}",
-            value=value,
+            name=name_centered,
+            value=value_centered,
             inline=False
         )
 
     await interaction.followup.send(embed=embed)
+
+
+# helper function for approximate centering (discord doesn't support alignment natively)
+def text_center(text: str) -> str:
+    """Adds invisible spaces to approximate center alignment."""
+    pad = "‎ " * 8  # tweak spacing here if needed
+    lines = text.splitlines()
+    return "\n".join(f"{pad}{line}{pad}" for line in lines)
+
 
 # -------------------- RESET --------------------
 @tree.command(name="reset", description="Reset all inviter points (Moderators only)")
