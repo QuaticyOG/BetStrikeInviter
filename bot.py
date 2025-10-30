@@ -257,7 +257,8 @@ async def leaderboard(interaction: discord.Interaction):
         await interaction.followup.send("No points yet.")
         return
 
-    embed = discord.Embed(title="Invite Leaderboard", color=discord.Color.blurple(), timestamp=datetime.now(timezone.utc))
+    embed = discord.Embed(    title="🏆  **Top 10 Inviters Leaderboard**",
+    description="Here are the legends bringing in new members!", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
     for i, (user_id, points) in enumerate(rows, start=1):
         try:
             user = await bot.fetch_user(user_id)
