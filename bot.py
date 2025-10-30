@@ -191,7 +191,7 @@ async def points(interaction: discord.Interaction, member: discord.Member | None
             f"🏆 **{target.name}** currently has **{points} points!** 💸\n\n"
             "👑 Keep inviting friends to climb the leaderboard and earn real rewards!"
         ),
-        color=discord.Color.purple(),
+        color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
     )
 
@@ -305,7 +305,7 @@ async def leaderboard(interaction: discord.Interaction):
 
     embed = discord.Embed(
         title="🏆 Invite Leaderboard",
-        color=discord.Color.blurple(),
+        color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
     )
 
