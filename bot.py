@@ -48,6 +48,14 @@ async def init_db():
             created_at TEXT
         );""")
         await db.execute("""
+        CREATE TABLE IF NOT EXISTS invite_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invitee_id TEXT,
+        inviter_id TEXT,
+        join_time TEXT
+        );
+    """)
+        await db.execute("""
         CREATE TABLE IF NOT EXISTS invite_map (
             invitee_id TEXT PRIMARY KEY,
             inviter_id TEXT,
@@ -72,10 +80,22 @@ async def add_points(user_id: int, amount: int):
 
 async def set_invite_map(invitee_id: int, inviter_id: int, valid_account: bool, used_code: str | None):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO invite_map (invitee_id, inviter_id, valid_account, used_code) VALUES (?, ?, ?, ?)",
-            (str(invitee_id), str(inviter_id), 1 if valid_account else 0, used_code)
-        )
+        # Check if the invitee already exists
+        cur = await db.execute("SELECT members_awarded, striker_awarded FROM invite_map WHERE invitee_id = ?", (str(invitee_id),))
+        existing = await cur.fetchone()
+        if existing:
+            # Preserve awarded flags; just update inviter/valid_account/code if changed
+            await db.execute("""
+                UPDATE invite_map
+                SET inviter_id = ?, valid_account = ?, used_code = ?
+                WHERE invitee_id = ?
+            """, (str(inviter_id), 1 if valid_account else 0, used_code, str(invitee_id)))
+        else:
+            # New invitee entry
+            await db.execute("""
+                INSERT INTO invite_map (invitee_id, inviter_id, valid_account, used_code)
+                VALUES (?, ?, ?, ?)
+            """, (str(invitee_id), str(inviter_id), 1 if valid_account else 0, used_code))
         await db.commit()
 
 async def get_inviter_for_invitee(invitee_id: int):
