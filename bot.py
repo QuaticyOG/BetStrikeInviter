@@ -302,6 +302,36 @@ async def leaderboard(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
+# -------------------- POINTS --------------------
+@tree.command(name="points", description="Check how many points you or another user have")
+@app_commands.describe(member="The user you want to check (optional)")
+async def points(interaction: discord.Interaction, member: discord.Member | None = None):
+    await interaction.response.defer(ephemeral=True)
+
+    target = member or interaction.user
+    user_id = str(target.id)
+
+    # Fetch points from database
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+
+    points = row[0] if row else 0
+
+    # Build fancy embed
+    embed = discord.Embed(
+        title="💜 BETSTRIKE POINTS 💜",
+        description=(
+            f"🏆 **{target.name}** currently has **{points} points!** 💸\n\n"
+            "👑 Keep inviting friends to climb the leaderboard and earn real rewards!"
+        ),
+        color=discord.Color.purple(),
+        timestamp=datetime.now(timezone.utc)
+    )
+
+    embed.set_footer(text="Use /leaderboard to view the top inviters 🏆")
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # helper function for approximate centering (discord doesn't support alignment natively)
