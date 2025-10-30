@@ -166,6 +166,46 @@ async def getinvite(interaction: discord.Interaction):
     except discord.Forbidden:
         await interaction.followup.send("I don't have permission to create invites in this channel.", ephemeral=True)
 
+
+# -------------------- POINTS --------------------
+@tree.command(name="points", description="Check how many points you or another user have")
+@app_commands.describe(member="The user you want to check (optional)")
+async def points(interaction: discord.Interaction, member: discord.Member | None = None):
+
+    await interaction.response.defer(ephemeral=True)
+
+    target = member or interaction.user
+    user_id = str(target.id)
+
+    # Fetch points from database
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+
+    points = row[0] if row else 0
+
+    # Build fancy embed
+    embed = discord.Embed(
+        title="💜 BETSTRIKE POINTS 💜",
+        description=(
+            f"🏆 **{target.name}** currently has **{points} points!** 💸\n\n"
+            "👑 Keep inviting friends to climb the leaderboard and earn real rewards!"
+        ),
+        color=discord.Color.purple(),
+        timestamp=datetime.now(timezone.utc)
+    )
+
+    embed.set_footer(text="Use /leaderboard to view the top inviters 🏆")
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+# helper function for approximate centering (discord doesn't support alignment natively)
+def text_center(text: str) -> str:
+    """Return text without any invisible padding."""
+    return text
+
+
 # -------------------- MEMBER JOIN --------------------
 @bot.event
 async def on_member_join(member):
@@ -302,44 +342,6 @@ async def leaderboard(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-# -------------------- POINTS --------------------
-@tree.command(name="points", description="Check how many points you or another user have")
-@app_commands.describe(member="The user you want to check (optional)")
-async def points(interaction: discord.Interaction, member: discord.Member | None = None):
-
-    await interaction.response.defer(ephemeral=True)
-
-    target = member or interaction.user
-    user_id = str(target.id)
-
-    # Fetch points from database
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (user_id,))
-        row = await cur.fetchone()
-
-    points = row[0] if row else 0
-
-    # Build fancy embed
-    embed = discord.Embed(
-        title="💜 BETSTRIKE POINTS 💜",
-        description=(
-            f"🏆 **{target.name}** currently has **{points} points!** 💸\n\n"
-            "👑 Keep inviting friends to climb the leaderboard and earn real rewards!"
-        ),
-        color=discord.Color.purple(),
-        timestamp=datetime.now(timezone.utc)
-    )
-
-    embed.set_footer(text="Use /leaderboard to view the top inviters 🏆")
-
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-# helper function for approximate centering (discord doesn't support alignment natively)
-def text_center(text: str) -> str:
-    """Return text without any invisible padding."""
-    return text
-
 
 # -------------------- RESET --------------------
 @tree.command(name="reset", description="Reset all inviter points (Moderators only)")
@@ -367,6 +369,17 @@ async def on_invite_delete(invite):
     guild_cache = guild_invites_cache.get(invite.guild.id, {})
     if invite.code in guild_cache:
         del guild_cache[invite.code]
+        
+# -------------------- SYNC --------------------
+@tree.command(name="sync", description="Force sync slash commands (admin only)")
+@app_commands.checks.has_permissions(administrator=True)
+async def sync(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        synced = await tree.sync()
+        await interaction.followup.send(f"✅ Synced {len(synced)} commands with Discord!", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Sync failed: {e}", ephemeral=True)
 
 # -------------------- RUN BOT --------------------
 if __name__ == "__main__":
