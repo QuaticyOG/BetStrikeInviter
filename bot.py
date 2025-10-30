@@ -267,12 +267,12 @@ async def leaderboard(interaction: discord.Interaction):
 
     # 💜 Embed header
     embed = discord.Embed(
-        title="⠀💜🏆  BETSTRIKE INVITER CHAMPIONS!  🏆💜",
+        title="⠀💜🏆  **__BETSTRIKE INVITER CHAMPIONS!__**  🏆💜",
         description=(
             "‎\n"
-            "⠀⠀⠀🔥 **The Top 10 Inviters of the Month!** 🔥\n\n"
-            "💸 **Each top inviter wins a share of $1,000 USD!** 💸\n"
-            "👑 Invite more, climb higher — earn real rewards! 👑\n"
+            "⠀⠀⠀🔥 **The Top 10 Inviters of the __Month!__** 🔥\n\n"
+            "⠀💸 **Each top inviter wins a share of __$1,000 USD!__** 💸\n"
+            "⠀👑 Invite more, climb higher — earn __real rewards!__** 👑\n"
             "‎"
         ),
         color=discord.Color.purple(),
