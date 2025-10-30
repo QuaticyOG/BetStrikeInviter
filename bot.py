@@ -265,7 +265,7 @@ async def leaderboard(interaction: discord.Interaction):
         description=(
             "🔥 **The Top 10 Inviters of the Month!** 🔥\n\n"
             "💸 **Each top inviter wins a share of $1,000 USD!** 💸\n"
-            "Invite more, climb higher — earn real rewards! 👑"
+            "👑 Invite more, climb higher — earn real rewards! 👑"
         ),
         color=discord.Color.purple(),
         timestamp=datetime.now(timezone.utc)
