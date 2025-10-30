@@ -262,24 +262,24 @@ async def leaderboard(interaction: discord.Interaction):
     # prize structure (1st → 10th)
     prize_map = [350, 250, 150, 60, 50, 45, 35, 30, 20, 10]
 
-    # rank emojis or numbers
+    # rank symbols
     rank_emojis = ["🥇", "🥈", "🥉"] + [f"#{i}" for i in range(4, 11)]
 
+    # 💜 Embed header
     embed = discord.Embed(
-        title="💜🏆  **BETSTRIKE INVITER CHAMPIONS!**  🏆💜",
+        title="⠀💜🏆  BETSTRIKE INVITER CHAMPIONS!  🏆💜",
         description=(
-            "🔥 **The Top 10 Inviters of the Month!** 🔥\n\n"
+            "‎\n"
+            "⠀⠀⠀🔥 **The Top 10 Inviters of the Month!** 🔥\n\n"
             "💸 **Each top inviter wins a share of $1,000 USD!** 💸\n"
-            "👑 Invite more, climb higher — earn real rewards! 👑"
+            "👑 Invite more, climb higher — earn real rewards! 👑\n"
+            "‎"
         ),
         color=discord.Color.purple(),
         timestamp=datetime.now(timezone.utc)
     )
 
-    # center description text by adding invisible spaces
-    embed.description = f"‎\n{text_center(embed.description)}\n‎"
-
-    # Fill leaderboard (always show 10)
+    # 🏅 Fill top 10 list
     for i in range(10):
         prize = prize_map[i]
         rank = rank_emojis[i]
@@ -289,24 +289,19 @@ async def leaderboard(interaction: discord.Interaction):
             try:
                 user = await bot.fetch_user(user_id)
                 name = f"{user.name}#{user.discriminator}"
-            except:
-                name = str(user_id)
-            value = f"💵 **${prize} prize** — **POINTS:** {points}"
+            except Exception:
+                name = f"User {user_id}"
         else:
             name = "— No one yet —"
-            value = f"💵 **${prize} prize** — **POINTS:** 0"
+            points = 0
 
-        # add centered text formatting
-        name_centered = f"‎\n{text_center(f'{rank} — {name}')}\n‎"
-        value_centered = f"‎\n{text_center(value)}\n‎"
+        # All info on one line
+        line = f"{rank} — {name} — **POINTS:** {points} 💵 **${prize} prize**"
 
-        embed.add_field(
-            name=name_centered,
-            value=value_centered,
-            inline=False
-        )
+        embed.add_field(name="‎", value=line, inline=False)
 
     await interaction.followup.send(embed=embed)
+
 
 
 # helper function for approximate centering (discord doesn't support alignment natively)
