@@ -312,7 +312,7 @@ async def leaderboard(interaction: discord.Interaction):
             "‎\n"
             "⠀⠀⠀🔥 **The Top 10 Inviters of the __Month!__** 🔥\n\n"
             "⠀💸 **Each top inviter wins a share of __$1,000 USD!__** 💸\n"
-            "⠀👑 Invite more, climb higher — earn __real rewards!__** 👑\n"
+            "⠀👑 Invite more, climb higher — earn __real rewards!__ 👑\n"
             "‎"
         ),
         color=discord.Color.purple(),
