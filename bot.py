@@ -117,7 +117,7 @@ async def get_creator_by_code(code: str):
 
 async def clear_all_points():
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE inviters SET points = 0")
+        await db.execute("DELETE FROM inviters")
         await db.commit()
 
 async def top_n_inviters(n=10):
