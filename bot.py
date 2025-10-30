@@ -306,6 +306,7 @@ async def leaderboard(interaction: discord.Interaction):
 @tree.command(name="points", description="Check how many points you or another user have")
 @app_commands.describe(member="The user you want to check (optional)")
 async def points(interaction: discord.Interaction, member: discord.Member | None = None):
+
     await interaction.response.defer(ephemeral=True)
 
     target = member or interaction.user
