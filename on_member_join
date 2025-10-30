@@ -165,6 +165,7 @@ async def getinvite(interaction: discord.Interaction):
 async def on_member_join(member):
     guild = member.guild
     account_age = datetime.now(timezone.utc) - member.created_at
+    print(f"[DEBUG] on_member_join: {member} | used_inviter={used_inviter} | used_code={used_code}")
     valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
 
     # Refresh invites
