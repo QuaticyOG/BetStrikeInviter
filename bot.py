@@ -326,17 +326,21 @@ async def leaderboard(interaction: discord.Interaction):
 
         if i < len(rows):
             user_id, points = rows[i]
-            try:
-                user = await bot.fetch_user(user_id)
-                name = f"{user.name}#{user.discriminator}"
-            except Exception:
-                name = f"User {user_id}"
+try:
+    user = await bot.fetch_user(user_id)
+    # Handle new Discord usernames (no discriminator)
+    if user.discriminator == "0":
+        name = user.name
+    else:
+        name = f"{user.name}#{user.discriminator}"
+except Exception:
+    name = f"User {user_id}"
         else:
             name = "— No one yet —"
             points = 0
 
         # All info on one line
-        line = f"{rank} — {name} — **POINTS:** {points} 💵 **${prize} prize**"
+        line = f"{rank} ⠀ {name} ⠀ **POINTS:** {points} ⠀💵 ⠀**${prize} Prize**"
 
         embed.add_field(name="‎", value=line, inline=False)
 
