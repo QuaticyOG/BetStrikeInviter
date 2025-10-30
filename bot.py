@@ -299,25 +299,19 @@ async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     rows = await top_n_inviters(10)
 
-    # prize structure (1st → 10th)
-    prize_map = [350, 250, 150, 60, 50, 45, 35, 30, 20, 10]
+    if not rows:
+        await interaction.followup.send("No points yet.")
+        return
 
-    # rank symbols
-    rank_emojis = ["🥇", "🥈", "🥉"] + [f"#{i}" for i in range(4, 11)]
-
-    # 💜 Embed header
     embed = discord.Embed(
-        title="⠀💜🏆  **__BETSTRIKE INVITER CHAMPIONS!__**  🏆💜",
-        description=(
-            "‎\n"
-            "⠀⠀⠀🔥 **The Top 10 Inviters of the __Month!__** 🔥\n\n"
-            "⠀💸 **Each top inviter wins a share of __$1,000 USD!__** 💸\n"
-            "⠀👑 Invite more, climb higher — earn __real rewards!__ 👑\n"
-            "‎"
-        ),
-        color=discord.Color.purple(),
+        title="🏆 Invite Leaderboard",
+        color=discord.Color.blurple(),
         timestamp=datetime.now(timezone.utc)
     )
+
+    # 🏅 Emojis and prizes for top 10
+    rank_emojis = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    prize_map = ["350", "250", "200", "150", "100", "50", "50", "25", "25", "25"]
 
     # 🏅 Fill top 10 list
     for i in range(10):
@@ -327,12 +321,8 @@ async def leaderboard(interaction: discord.Interaction):
         if i < len(rows):
             user_id, points = rows[i]
             try:
-                user = await bot.fetch_user(user_id)
-                # Handle new Discord usernames (no discriminator)
-                if user.discriminator == "0":
-                    name = user.name
-                else:
-                    name = f"{user.name}#{user.discriminator}"
+                # Mention user (@Username)
+                name = f"<@{user_id}>"
             except Exception:
                 name = f"User {user_id}"
         else:
@@ -344,6 +334,7 @@ async def leaderboard(interaction: discord.Interaction):
         embed.add_field(name="‎", value=line, inline=False)
 
     await interaction.followup.send(embed=embed)
+
 
 
 # -------------------- RESET --------------------
