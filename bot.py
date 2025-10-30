@@ -18,10 +18,16 @@ STRIKER_ROLE_NAME = "Striker"   # +2 points
 # Minimum account age for points
 ACCOUNT_MIN_AGE_DAYS = 30
 
-# --- Bot Intents ---
+# --- Intents ---
 intents = discord.Intents.default()
-intents.members = True
-intents.guilds = True
+
+# Required for member tracking, role changes, invites, etc.
+intents.members = True       # needed for member joins/leaves and role updates
+intents.guilds = True        # needed for guild info (roles, invites)
+intents.invites = True       # track invite creation/deletion
+intents.presences = False    # not needed, optional
+intents.messages = False     # not needed for this bot
+intents.message_content = False  # only needed if using text-based commands
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
@@ -78,9 +84,9 @@ async def get_inviter_for_invitee(invitee_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "SELECT inviter_id, members_awarded, striker_awarded, valid_account FROM invite_map WHERE invitee_id = ?",
-            (str(invitee_id),)
+            (str(invitee_id),),
         )
-        row = await cur.fetchone()  # ✅ must await
+        row = await cur.fetchone()  # <-- was missing await
         if row:
             return {
                 "inviter_id": int(row[0]),
@@ -106,7 +112,7 @@ async def save_invite_link(code: str, creator_id: int):
 async def get_creator_by_code(code: str):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT creator_id FROM invite_links WHERE code = ?", (code,))
-        row = cur.fetchone()
+        row = await cur.fetchone()  # <-- was missing await
         if row:
             return int(row[0])
         return None
