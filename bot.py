@@ -115,8 +115,11 @@ async def clear_all_points():
 
 async def top_n_inviters(n=10):
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT user_id, points FROM inviters ORDER BY points DESC LIMIT ?", (n,))
-        rows = cur.fetchall()
+        cur = await db.execute(
+            "SELECT user_id, points FROM inviters ORDER BY points DESC LIMIT ?",
+            (n,)
+        )
+        rows = await cur.fetchall()
         return [(int(r[0]), r[1]) for r in rows]
 
 # -------------------- EVENTS --------------------
