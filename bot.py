@@ -76,8 +76,11 @@ async def set_invite_map(invitee_id: int, inviter_id: int, valid_account: bool, 
 
 async def get_inviter_for_invitee(invitee_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT inviter_id, members_awarded, striker_awarded, valid_account FROM invite_map WHERE invitee_id = ?", (str(invitee_id),))
-        row = cur.fetchone()
+        cur = await db.execute(
+            "SELECT inviter_id, members_awarded, striker_awarded, valid_account FROM invite_map WHERE invitee_id = ?",
+            (str(invitee_id),)
+        )
+        row = await cur.fetchone()  # ✅ must await
         if row:
             return {
                 "inviter_id": int(row[0]),
