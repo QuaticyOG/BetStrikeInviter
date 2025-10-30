@@ -306,10 +306,8 @@ async def leaderboard(interaction: discord.Interaction):
 
 # helper function for approximate centering (discord doesn't support alignment natively)
 def text_center(text: str) -> str:
-    """Adds invisible spaces to approximate center alignment."""
-    pad = "‎ " * 8  # tweak spacing here if needed
-    lines = text.splitlines()
-    return "\n".join(f"{pad}{line}{pad}" for line in lines)
+    """Return text without any invisible padding."""
+    return text
 
 
 # -------------------- RESET --------------------
