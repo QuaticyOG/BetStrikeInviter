@@ -144,9 +144,9 @@ async def on_ready():
             guild_invites_cache[guild.id] = {}
 
     print(f"✅ Bot ready: {bot.user}")
-        # 🟣 Set bot presence (status message)
+    # 🟣 Set bot presence (status message)
     await bot.change_presence(
-        discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀")
+        activity=discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀"),
         status=discord.Status.online  # Options: online, idle, dnd, invisible
     )
     try:
