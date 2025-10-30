@@ -253,19 +253,32 @@ async def on_member_update(before: discord.Member, after: discord.Member):
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     rows = await top_n_inviters(10)
-    if not rows:
-        await interaction.followup.send("No points yet.")
-        return
 
-    embed = discord.Embed(    title="🏆  **Top 10 Inviters Leaderboard**",
-    description="Here are the legends bringing in new members!", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
-    for i, (user_id, points) in enumerate(rows, start=1):
-        try:
-            user = await bot.fetch_user(user_id)
-            name = f"{user.name}#{user.discriminator}"
-        except:
-            name = str(user_id)
-        embed.add_field(name=f"#{i} — {name}", value=f"Points: {points}", inline=False)
+    embed = discord.Embed(
+        title="🏆  **Top 10 Inviters Leaderboard**",
+        description="Here are the legends bringing in new members!",
+        color=discord.Color.purple(),
+        timestamp=datetime.now(timezone.utc)
+    )
+
+    if not rows:
+        embed.add_field(
+            name="No inviters yet!",
+            value="Be the first to invite someone and earn points!",
+            inline=False
+        )
+    else:
+        for i, (user_id, points) in enumerate(rows, start=1):
+            try:
+                user = await bot.fetch_user(user_id)
+                name = f"{user.name}#{user.discriminator}"
+            except:
+                name = str(user_id)
+            embed.add_field(
+                name=f"#{i} — {name}",
+                value=f"Points: {points}",
+                inline=False
+            )
 
     await interaction.followup.send(embed=embed)
 
