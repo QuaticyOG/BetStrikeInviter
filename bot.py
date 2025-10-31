@@ -294,18 +294,19 @@ async def leaderboard(interaction: discord.Interaction):
         await interaction.followup.send("No points yet.")
         return
 
+    # Header & description
     title = "🏆 BetStrike Monthly Invite Leaderboard 🏆"
-    desc = (
+    description = (
         "💰 $1,000 Monthly Prize Pool! 💰\n"
         "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
         "✨ Top 10 inviters get amazing rewards! ✨"
     )
 
+    # Top 10 formatting with invisible padding for visual centering
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
 
     leaderboard_lines = []
-
     for i in range(10):
         if i < len(rows):
             uid, pts = rows[i]
@@ -313,15 +314,15 @@ async def leaderboard(interaction: discord.Interaction):
         else:
             name = "— No one yet —"
             pts = 0
+        # Add invisible spaces to align with title visually
+        leaderboard_lines.append(f"⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name}   {pts} pts 💵 ${prize_map[i]}")
 
-        # Fixed-width formatting with padding
-        # Emoji + Name (max 20 chars) + Points + Prize
-        line = f"{rank_emojis[i]:<2} {name:<20} {pts:>3} pts 💵 ${prize_map[i]:>3}"
-        leaderboard_lines.append(line)
+    # Combine description + leaderboard
+    full_desc = f"{description}\n\n" + "\n".join(leaderboard_lines)
 
     embed = discord.Embed(
-        title=f"```{title}```",
-        description=f"```{desc}```\n```{chr(10).join(leaderboard_lines)}```",
+        title=title,
+        description=full_desc,
         color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
     )
