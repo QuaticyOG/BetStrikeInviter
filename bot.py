@@ -8,17 +8,17 @@ from datetime import datetime, timezone, timedelta
 import calendar
 import asyncio
 import smtplib
-from email.message import EmailMessage
+from .message import Message
 import aiosqlite
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
-# -------------------- LOAD TOKEN & EMAIL CONFIG (RAILWAY ENV) -------------------
+# -------------------- LOAD TOKEN &  CONFIG (RAILWAY ENV) -------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
-EMAIL_SENDER = os.getenv("EMAIL_SENDER")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+_SENDER = os.getenv("_SENDER")
+_PASSWORD = os.getenv("_PASSWORD")
+_RECEIVER = os.getenv("_RECEIVER")
 
 # Roles that give points
 MEMBERS_ROLE_NAME = "Members"   # +1 point
@@ -253,26 +253,33 @@ async def testreset(interaction: discord.Interaction):
     await full_monthly_reset()
     await interaction.followup.send("✅ Test monthly reset complete. Email sent and leaderboard cleared.", ephemeral=True)
 
-# -------------------- MONTHLY RESET --------------------
+# -------------------- ASYNC EMAIL --------------------
 async def send_leaderboard_email(top10):
     msg = EmailMessage()
     msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
     msg["From"] = EMAIL_SENDER
     msg["To"] = EMAIL_RECEIVER
+
     if not top10:
         content = "No leaderboard data this month."
     else:
-        lines = [f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)]
-        content = "\n".join(lines)
+        content = "\n".join([f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)])
     msg.set_content(content)
+
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            smtp.send_message(msg)
+        await aiosmtplib.send(
+            msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
+            hostname="smtp.gmail.com",
+            port=465,
+            username=EMAIL_SENDER,
+            password=EMAIL_PASSWORD,
+            use_tls=True
+        )
         print("[EMAIL] Leaderboard email sent.")
     except Exception as e:
         print(f"[EMAIL ERROR] {e}")
 
+# -------------------- FULL RESET --------------------
 async def full_monthly_reset():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM inviters;")
@@ -282,16 +289,25 @@ async def full_monthly_reset():
         await db.commit()
     print("[DB] Full leaderboard and invite data reset.")
 
+# -------------------- MONTHLY RESET LOOP --------------------
+monthly_reset_done_today = False  # flag to prevent double execution
+
 @tasks.loop(minutes=1)
 async def monthly_reset_check():
+    global monthly_reset_done_today
     now = datetime.now(timezone.utc)
     last_day = calendar.monthrange(now.year, now.month)[1]
+
+    # Only run on last day at 23:59 UTC
     if now.day == last_day and now.hour == 23 and now.minute == 59:
-        print("[SCHEDULE] Running monthly leaderboard reset...")
-        top10 = await top_n_inviters(10)
-        await send_leaderboard_email(top10)
-        await full_monthly_reset()
-        await asyncio.sleep(70)
+        if not monthly_reset_done_today:
+            print("[SCHEDULE] Running monthly leaderboard reset...")
+            top10 = await top_n_inviters(10)
+            await send_leaderboard_email(top10)
+            await full_monthly_reset()
+            monthly_reset_done_today = True
+    else:
+        monthly_reset_done_today = False
 
 @monthly_reset_check.before_loop
 async def before_monthly_reset_check():
