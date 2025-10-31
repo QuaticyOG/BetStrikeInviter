@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
-# -------------------- LOAD TOKEN & EMAIL CONFIG (RAILWAY ENV) --------------------
+# -------------------- LOAD TOKEN & EMAIL CONFIG (RAILWAY ENV) -------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
