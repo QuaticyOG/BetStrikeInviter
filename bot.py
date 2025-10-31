@@ -293,11 +293,11 @@ async def leaderboard(interaction: discord.Interaction):
         await interaction.followup.send("No points yet.")
         return
     embed = discord.Embed(
-        title="🏆 BetStrike Monthly Invite Leaderboard 🏆",
+        title="⠀⠀⠀⠀⠀⠀🏆 **BetStrike Monthly Invite Leaderboard** 🏆",
         description=(
-            "💰 **__$1,000 Monthly Prize Pool!__**\n"
-            "Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-            "✨ *Top 10 inviters get amazing rewards!*"
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 **__$1,000 Monthly Prize Pool!__** 💰\n"
+            "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
+            "⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
         ),
                           color=discord.Color.from_str("#a16bff"),
                           timestamp=datetime.now(timezone.utc))
