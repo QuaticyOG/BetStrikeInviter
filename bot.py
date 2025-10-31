@@ -198,14 +198,26 @@ async def get_log_channel(guild_id: int) -> discord.TextChannel | None:
 # -------------------- EMAIL --------------------
 async def send_leaderboard_email(top10):
     msg = EmailMessage()
-    msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
+    msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results 🏆"
     msg["From"] = EMAIL_SENDER
     msg["To"] = EMAIL_RECEIVER
+
     if not top10:
         content = "No leaderboard data this month."
     else:
-        content = "\n".join([f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)])
+        rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+        lines = ["🏆 **BetStrike Monthly Leaderboard Results** 🏆\n"]
+
+        for i, (uid, pts) in enumerate(top10):
+            user = bot.get_user(uid)
+            username = user.name if user else f"User {uid}"
+            emoji = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
+            lines.append(f"{emoji} **{username}** <@{uid}> — {pts} pts")
+
+        content = "\n".join(lines)
+
     msg.set_content(content)
+
     try:
         await aiosmtplib.send(
             msg,
