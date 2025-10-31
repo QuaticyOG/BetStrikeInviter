@@ -304,11 +304,11 @@ async def leaderboard(interaction: discord.Interaction):
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
 
     embed = discord.Embed(
-        title="⠀⠀⠀⠀⠀⠀🏆 BetStrike Monthly Invite Leaderboard 🏆",
+        title="⠀⠀⠀⠀⠀⠀🏆 **BetStrike Monthly Invite Leaderboard** 🏆",
         description=(
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 $1,000 Monthly Prize Pool! 💰\n"
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 **__$1,000 Monthly Prize Pool!__** 💰\n"
             "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀✨ Top 10 inviters get amazing rewards! ✨"
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
         ),
         color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
@@ -325,7 +325,7 @@ async def leaderboard(interaction: discord.Interaction):
         # Add extra spaces for perfect centering (you said 4 extra)
         embed.add_field(
             name="‎",  # invisible character
-            value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}",
+            value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} **pts** 💵 ${prize_map[i]}",
             inline=False
         )
 
@@ -380,9 +380,9 @@ async def testreset(interaction: discord.Interaction):
     await full_monthly_reset()
     await interaction.response.send_message("✅ Test monthly reset complete.", ephemeral=True)
 
-# -------------------- MEMBER EVENTS --------------------
+# -------------------- MEMBER JOIN --------------------
 @bot.event
-async def on_member_join(member: discord.Member):
+async def on_member_join(member):
     guild = member.guild
     account_age = datetime.now(timezone.utc) - member.created_at
     valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
@@ -405,68 +405,100 @@ async def on_member_join(member: discord.Member):
             used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
             break
 
+    # update cache
     guild_invites_cache[guild.id] = {invite.code: invite.uses for invite in invites_after}
+
+    print(f"[DEBUG] on_member_join: {member} | used_inviter={used_inviter} | used_code={used_code}")
 
     if used_inviter:
         await set_invite_map(member.id, used_inviter, valid_account, used_code)
 
+        # ✅ award points immediately if they already have roles
         members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
         striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
 
         if members_role and members_role in member.roles:
-            await add_points(used_inviter, 1, guild_id=guild.id, invitee_id=member.id, reason="joined with Members role")
+            await add_points(used_inviter, 1)
             await set_awarded_flags(member.id, members_awarded=True)
-
         if striker_role and striker_role in member.roles:
-            await add_points(used_inviter, 2, guild_id=guild.id, invitee_id=member.id, reason="joined with Striker role")
+            await add_points(used_inviter, 2)
             await set_awarded_flags(member.id, striker_awarded=True)
 
-
+# -------------------- MEMBER UPDATE --------------------
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
-    guild = after.guild
-    inviter_record = await get_inviter_for_invitee(after.id)
-    if not inviter_record or not inviter_record["valid_account"]:
-        return
+    print(f"[DEBUG] on_member_update fired for {after}.")
 
-    inviter_id = inviter_record["inviter_id"]
     before_roles = set(r.id for r in before.roles)
     after_roles = set(r.id for r in after.roles)
+
     added = after_roles - before_roles
     removed = before_roles - after_roles
 
+    guild = after.guild
     members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
     striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
 
-    if members_role:
-        if members_role.id in added and not inviter_record["members_awarded"]:
-            await add_points(inviter_id, 1, guild_id=guild.id, invitee_id=after.id, reason="got Members role")
-            await set_awarded_flags(after.id, members_awarded=True)
-        elif members_role.id in removed and inviter_record["members_awarded"]:
-            await add_points(inviter_id, -1, guild_id=guild.id, invitee_id=after.id, reason="lost Members role")
-            await set_awarded_flags(after.id, members_awarded=False)
-
-    if striker_role:
-        if striker_role.id in added and not inviter_record["striker_awarded"]:
-            await add_points(inviter_id, 2, guild_id=guild.id, invitee_id=after.id, reason="got Striker role")
-            await set_awarded_flags(after.id, striker_awarded=True)
-        elif striker_role.id in removed and inviter_record["striker_awarded"]:
-            await add_points(inviter_id, -2, guild_id=guild.id, invitee_id=after.id, reason="lost Striker role")
-            await set_awarded_flags(after.id, striker_awarded=False)
-
-
-@bot.event
-async def on_member_remove(member: discord.Member):
-    guild = member.guild
-    inviter_record = await get_inviter_for_invitee(member.id)
-    if not inviter_record or not inviter_record["valid_account"]:
+    inviter_record = await get_inviter_for_invitee(after.id)
+    if not inviter_record or inviter_record["inviter_id"] == 0 or not inviter_record["valid_account"]:
         return
 
     inviter_id = inviter_record["inviter_id"]
 
+    # Members role +1 / -1
+    if members_role:
+        if members_role.id in added and not inviter_record["members_awarded"]:
+            await add_points(inviter_id, 1)
+            await set_awarded_flags(after.id, members_awarded=True)
+            print(f"[POINTS] +1 for inviter {inviter_id} (Members role).")
+        elif members_role.id in removed and inviter_record["members_awarded"]:
+            await add_points(inviter_id, -1)
+            await set_awarded_flags(after.id, members_awarded=False)
+            print(f"[POINTS] -1 for inviter {inviter_id} (Members role removed).")
+
+    # Striker role +2 / -2
+    if striker_role:
+        if striker_role.id in added and not inviter_record["striker_awarded"]:
+            await add_points(inviter_id, 2)
+            await set_awarded_flags(after.id, striker_awarded=True)
+            print(f"[POINTS] +2 for inviter {inviter_id} (Striker role).")
+        elif striker_role.id in removed and inviter_record["striker_awarded"]:
+            await add_points(inviter_id, -2)
+            await set_awarded_flags(after.id, striker_awarded=False)
+            print(f"[POINTS] -2 for inviter {inviter_id} (Striker role removed).")
+
+
+# -------------------- MEMBER REMOVE --------------------
+@bot.event
+async def on_member_remove(member: discord.Member):
+    inviter_record = await get_inviter_for_invitee(member.id)
+    if not inviter_record or inviter_record["inviter_id"] == 0 or not inviter_record["valid_account"]:
+        return
+
+    inviter_id = inviter_record["inviter_id"]
+    guild = member.guild
+
+    # Get roles for clarity (not used directly but kept consistent)
+    members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+    striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
+    # Subtract points if they had them
     if inviter_record["members_awarded"]:
-        await add_points(inviter_id, -1, guild_id=guild.id, invitee_id=member.id, reason="invitee left with Members role")
-        await set_awarded_fl
+        await add_points(inviter_id, -1)
+        await set_awarded_flags(member.id, members_awarded=False)
+        print(f"[POINTS] -1 for inviter {inviter_id} (invitee left with Members role).")
+
+    if inviter_record["striker_awarded"]:
+        await add_points(inviter_id, -2)
+        await set_awarded_flags(member.id, striker_awarded=False)
+        print(f"[POINTS] -2 for inviter {inviter_id} (invitee left with Striker role).")
+
+    # Optional: delete invite mapping so rejoining counts as a new invite
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
+        await db.commit()
+        print(f"[DEBUG] Removed invite map for {member.id}")
+
 
 
 # -------------------- INVITE CREATE/DELETE --------------------
