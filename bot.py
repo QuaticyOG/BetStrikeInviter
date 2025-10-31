@@ -317,7 +317,7 @@ async def leaderboard(interaction: discord.Interaction):
         description=(
             "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 **__$1,000 Monthly Prize Pool!__** 💰\n"
             "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
+            "⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
         ),
         color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
@@ -381,7 +381,7 @@ async def reset(interaction: discord.Interaction):
     await interaction.response.send_message("All inviter points reset to 0.", ephemeral=True)
 
 # /testreset
-@bot.tree.command(name="testreset", description="Resets all points for testing")
+@bot.tree.command(name="testreset", description="Resets all points for testing and sends leaderboard email")
 async def testreset(interaction: discord.Interaction):
     # Defer response to prevent Discord timeout
     await interaction.response.defer(ephemeral=True)
@@ -389,10 +389,16 @@ async def testreset(interaction: discord.Interaction):
     # Clear all points
     await clear_all_points()
 
-    # Send confirmation
+    # Fetch top 10 (will likely be empty after reset)
+    top10 = await top_n_inviters(10)
+
+    # Send leaderboard email
+    await send_leaderboard_email(top10)
+
+    # Send confirmation to Discord
     await interaction.followup.send(
         "✅ All inviter points have been cleared!\n"
-        "💎 Leaderboard is now reset for testing purposes."
+        "💎 Leaderboard is now reset for testing purposes and email sent."
     )
 
 
