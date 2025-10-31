@@ -1,46 +1,40 @@
 # bot.py
-required_vars = ["DISCORD_TOKEN", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECEIVER"]
-missing_vars = [v for v in required_vars if not os.getenv(v)]
-if missing_vars:
-    raise SystemExit(f"Missing environment variables: {missing_vars}")
 import os
-from datetime import datetime, timezone, timedelta
 import calendar
 import asyncio
-import smtplib
-from .message import Message
+from datetime import datetime, timezone, timedelta
 import aiosqlite
+import aiosmtplib
+from email.message import EmailMessage
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
-# -------------------- LOAD TOKEN &  CONFIG (RAILWAY ENV) -------------------
-TOKEN = os.getenv("DISCORD_TOKEN")
-_SENDER = os.getenv("_SENDER")
-_PASSWORD = os.getenv("_PASSWORD")
-_RECEIVER = os.getenv("_RECEIVER")
+# -------------------- ENV VARIABLES --------------------
+required_vars = ["DISCORD_TOKEN", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECEIVER"]
+missing_vars = [v for v in required_vars if not os.getenv(v)]
+if missing_vars:
+    raise SystemExit(f"Missing environment variables: {missing_vars}")
 
-# Roles that give points
+TOKEN = os.getenv("DISCORD_TOKEN")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+
+# -------------------- SETTINGS --------------------
 MEMBERS_ROLE_NAME = "Members"   # +1 point
 STRIKER_ROLE_NAME = "Striker"   # +2 points
-
-# Minimum account age for points
 ACCOUNT_MIN_AGE_DAYS = 30
+DB_PATH = "/data/db/betstrike.db"
+guild_invites_cache = {}
 
-# --- Intents --
+# -------------------- DISCORD BOT SETUP --------------------
 intents = discord.Intents.default()
 intents.members = True
 intents.guilds = True
 intents.invites = True
-intents.presences = False
-intents.messages = False
-intents.message_content = False
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
-
-DB_PATH = "/data/db/betstrike.db"
-guild_invites_cache = {}
 
 # -------------------- DATABASE --------------------
 async def init_db():
@@ -58,12 +52,12 @@ async def init_db():
         );""")
         await db.execute("""
         CREATE TABLE IF NOT EXISTS invite_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        invitee_id TEXT,
-        inviter_id TEXT,
-        join_time TEXT
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invitee_id TEXT,
+            inviter_id TEXT,
+            join_time TEXT
         );
-    """)
+        """)
         await db.execute("""
         CREATE TABLE IF NOT EXISTS invite_map (
             invitee_id TEXT PRIMARY KEY,
@@ -152,12 +146,72 @@ async def top_n_inviters(n=10):
         rows = await cur.fetchall()
         return [(int(r[0]), r[1]) for r in rows]
 
+# -------------------- EMAIL --------------------
+async def send_leaderboard_email(top10):
+    msg = EmailMessage()
+    msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
+    msg["From"] = EMAIL_SENDER
+    msg["To"] = EMAIL_RECEIVER
+    if not top10:
+        msg.set_content("No leaderboard data this month.")
+    else:
+        msg.set_content("\n".join([f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)]))
+
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname="smtp.gmail.com",
+            port=465,
+            username=EMAIL_SENDER,
+            password=EMAIL_PASSWORD,
+            use_tls=True
+        )
+        print("[EMAIL] Leaderboard email sent.")
+    except Exception as e:
+        print(f"[EMAIL ERROR] {e}")
+
+# -------------------- MONTHLY RESET --------------------
+async def full_monthly_reset():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM inviters;")
+        await db.execute("DELETE FROM invite_links;")
+        await db.execute("DELETE FROM invite_map;")
+        await db.execute("DELETE FROM invite_history;")
+        await db.commit()
+    print("[DB] Full leaderboard and invite data reset.")
+
+monthly_reset_done_today = False
+
+@tasks.loop(minutes=1)
+async def monthly_reset_check():
+    global monthly_reset_done_today
+    try:
+        now = datetime.now(timezone.utc)
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        if now.day == last_day and now.hour == 23 and now.minute == 59:
+            if not monthly_reset_done_today:
+                print("[SCHEDULE] Running monthly leaderboard reset...")
+                top10 = await top_n_inviters(10)
+                await send_leaderboard_email(top10)
+                await full_monthly_reset()
+                monthly_reset_done_today = True
+        else:
+            monthly_reset_done_today = False
+    except Exception as e:
+        print(f"[ERROR] Monthly reset loop failed: {e}")
+
+@monthly_reset_check.before_loop
+async def before_monthly_reset_check():
+    await bot.wait_until_ready()
+    print("[SCHEDULE] Monthly reset task started.")
+
+monthly_reset_check.start()
+
 # -------------------- DISCORD EVENTS --------------------
 @bot.event
 async def on_ready():
     await init_db()
     guild_invites_cache.clear()
-
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
@@ -165,24 +219,19 @@ async def on_ready():
         except Exception as e:
             print(f"[WARN] Could not fetch invites for {guild.name}: {e}")
             guild_invites_cache[guild.id] = {}
-
     print(f"✅ Bot ready: {bot.user}")
-    await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀"),
-        status=discord.Status.online
-    )
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀"), status=discord.Status.online)
     try:
         await tree.sync()
     except Exception as e:
-        print("Command sync failed:", e)
+        print(f"[WARN] Slash command sync failed: {e}")
 
 # -------------------- COMMANDS --------------------
 @tree.command(name="getinvite", description="Generate your personal server invite link")
 async def getinvite(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    channel = interaction.channel
     try:
-        invite = await channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Invite for {interaction.user}")
+        invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=True)
         await save_invite_link(invite.code, interaction.user.id)
         await interaction.followup.send(f"Your invite link: {invite.url}", ephemeral=True)
     except discord.Forbidden:
@@ -193,14 +242,13 @@ async def getinvite(interaction: discord.Interaction):
 async def points(interaction: discord.Interaction, member: discord.Member | None = None):
     await interaction.response.defer(ephemeral=True)
     target = member or interaction.user
-    user_id = str(target.id)
     async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (user_id,))
+        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (str(target.id),))
         row = await cur.fetchone()
-    points = row[0] if row else 0
+    points_val = row[0] if row else 0
     embed = discord.Embed(
         title="💜 BETSTRIKE POINTS 💜",
-        description=f"🏆 **{target.name}** currently has **{points} points!** 💸\n\n👑 Keep inviting friends to climb the leaderboard and earn rewards!",
+        description=f"🏆 **{target.name}** currently has **{points_val} points!** 💸",
         color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
     )
@@ -214,27 +262,19 @@ async def leaderboard(interaction: discord.Interaction):
     if not rows:
         await interaction.followup.send("No points yet.")
         return
-
-    embed = discord.Embed(
-        title="🏆 Invite Leaderboard",
-        color=discord.Color.from_str("#a16bff"),
-        timestamp=datetime.now(timezone.utc)
-    )
+    embed = discord.Embed(title="🏆 Invite Leaderboard", color=discord.Color.from_str("#a16bff"), timestamp=datetime.now(timezone.utc))
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
-
     for i in range(10):
         prize = prize_map[i]
         rank = rank_emojis[i]
         if i < len(rows):
-            user_id, points = rows[i]
+            user_id, points_val = rows[i]
             name = f"<@{user_id}>"
         else:
             name = "— No one yet —"
-            points = 0
-        line = f"{rank} ⠀ {name} ⠀ **POINTS:** {points} ⠀💵 ⠀**${prize} Prize**"
-        embed.add_field(name="‎", value=line, inline=False)
-
+            points_val = 0
+        embed.add_field(name="‎", value=f"{rank} ⠀ {name} ⠀ **POINTS:** {points_val} ⠀💵 ⠀**${prize} Prize**", inline=False)
     await interaction.followup.send(embed=embed)
 
 @tree.command(name="reset", description="Reset all inviter points (Moderators only)")
@@ -243,7 +283,7 @@ async def reset(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     await clear_all_points()
     await interaction.followup.send("All inviter points reset to 0.", ephemeral=True)
-    
+
 @tree.command(name="testreset", description="(Admin only) Test the monthly reset and email now")
 @app_commands.checks.has_permissions(administrator=True)
 async def testreset(interaction: discord.Interaction):
@@ -253,72 +293,7 @@ async def testreset(interaction: discord.Interaction):
     await full_monthly_reset()
     await interaction.followup.send("✅ Test monthly reset complete. Email sent and leaderboard cleared.", ephemeral=True)
 
-# -------------------- ASYNC EMAIL --------------------
-async def send_leaderboard_email(top10):
-    msg = EmailMessage()
-    msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
-    msg["From"] = EMAIL_SENDER
-    msg["To"] = EMAIL_RECEIVER
-
-    if not top10:
-        content = "No leaderboard data this month."
-    else:
-        content = "\n".join([f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)])
-    msg.set_content(content)
-
-    try:
-        await aiosmtplib.send(
-            msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
-            hostname="smtp.gmail.com",
-            port=465,
-            username=EMAIL_SENDER,
-            password=EMAIL_PASSWORD,
-            use_tls=True
-        )
-        print("[EMAIL] Leaderboard email sent.")
-    except Exception as e:
-        print(f"[EMAIL ERROR] {e}")
-
-# -------------------- FULL RESET --------------------
-async def full_monthly_reset():
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM inviters;")
-        await db.execute("DELETE FROM invite_links;")
-        await db.execute("DELETE FROM invite_map;")
-        await db.execute("DELETE FROM invite_history;")
-        await db.commit()
-    print("[DB] Full leaderboard and invite data reset.")
-
-# -------------------- MONTHLY RESET LOOP --------------------
-monthly_reset_done_today = False  # flag to prevent double execution
-
-@tasks.loop(minutes=1)
-async def monthly_reset_check():
-    global monthly_reset_done_today
-    now = datetime.now(timezone.utc)
-    last_day = calendar.monthrange(now.year, now.month)[1]
-
-    # Only run on last day at 23:59 UTC
-    if now.day == last_day and now.hour == 23 and now.minute == 59:
-        if not monthly_reset_done_today:
-            print("[SCHEDULE] Running monthly leaderboard reset...")
-            top10 = await top_n_inviters(10)
-            await send_leaderboard_email(top10)
-            await full_monthly_reset()
-            monthly_reset_done_today = True
-    else:
-        monthly_reset_done_today = False
-
-@monthly_reset_check.before_loop
-async def before_monthly_reset_check():
-    await bot.wait_until_ready()
-    print("[SCHEDULE] Monthly reset task started.")
-
-monthly_reset_check.start()
-
 # -------------------- RUN BOT --------------------
 if __name__ == "__main__":
-    if not TOKEN:
-        raise SystemExit("DISCORD_TOKEN not set in environment variables.")
     print("Starting bot...")
     bot.run(TOKEN)
