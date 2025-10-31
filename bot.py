@@ -1,4 +1,8 @@
 # bot.py
+required_vars = ["DISCORD_TOKEN", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECEIVER"]
+missing_vars = [v for v in required_vars if not os.getenv(v)]
+if missing_vars:
+    raise SystemExit(f"Missing environment variables: {missing_vars}")
 import os
 from datetime import datetime, timezone, timedelta
 import calendar
