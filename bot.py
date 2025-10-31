@@ -375,77 +375,92 @@ async def testreset(interaction: discord.Interaction):
 
 # -------------------- MEMBER EVENTS --------------------
 @bot.event
-async def on_member_join(member):
+async def on_member_join(member: discord.Member):
     guild = member.guild
     account_age = datetime.now(timezone.utc) - member.created_at
     valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
+
     try:
         invites_after = await guild.invites()
     except Exception:
         invites_after = []
+
     used_inviter = None
     used_code = None
     before_cache = guild_invites_cache.get(guild.id, {})
+
+    # find used invite
     for inv in invites_after:
-        if inv.uses > before_cache.get(inv.code, 0):
+        before_uses = before_cache.get(inv.code, 0)
+        if inv.uses > before_uses:
             used_code = inv.code
             creator_id = await get_creator_by_code(inv.code)
             used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
             break
-    guild_invites_cache[guild.id] = {inv.code: inv.uses for inv in invites_after}
+
+    guild_invites_cache[guild.id] = {invite.code: invite.uses for invite in invites_after}
+
     if used_inviter:
         await set_invite_map(member.id, used_inviter, valid_account, used_code)
+
         members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
         striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
         if members_role and members_role in member.roles:
-            await add_points(used_inviter, 1, reason=f"{member.mention} has Members role", guild_id=guild.id, invitee_id=member.id)
+            await add_points(used_inviter, 1, guild_id=guild.id, invitee_id=member.id, reason="joined with Members role")
             await set_awarded_flags(member.id, members_awarded=True)
+
         if striker_role and striker_role in member.roles:
-            await add_points(used_inviter, 2, reason=f"{member.mention} has Striker role", guild_id=guild.id, invitee_id=member.id)
+            await add_points(used_inviter, 2, guild_id=guild.id, invitee_id=member.id, reason="joined with Striker role")
             await set_awarded_flags(member.id, striker_awarded=True)
 
+
 @bot.event
-async def on_member_update(before, after):
+async def on_member_update(before: discord.Member, after: discord.Member):
     guild = after.guild
     inviter_record = await get_inviter_for_invitee(after.id)
     if not inviter_record or not inviter_record["valid_account"]:
         return
+
     inviter_id = inviter_record["inviter_id"]
     before_roles = set(r.id for r in before.roles)
     after_roles = set(r.id for r in after.roles)
     added = after_roles - before_roles
     removed = before_roles - after_roles
+
     members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
     striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
     if members_role:
         if members_role.id in added and not inviter_record["members_awarded"]:
-            await add_points(inviter_id, 1, reason=f"{after.mention} got Members role", guild_id=guild.id, invitee_id=after.id)
+            await add_points(inviter_id, 1, guild_id=guild.id, invitee_id=after.id, reason="got Members role")
             await set_awarded_flags(after.id, members_awarded=True)
         elif members_role.id in removed and inviter_record["members_awarded"]:
-            await add_points(inviter_id, -1, reason=f"{after.mention} lost Members role", guild_id=guild.id, invitee_id=after.id)
+            await add_points(inviter_id, -1, guild_id=guild.id, invitee_id=after.id, reason="lost Members role")
             await set_awarded_flags(after.id, members_awarded=False)
+
     if striker_role:
         if striker_role.id in added and not inviter_record["striker_awarded"]:
-            await add_points(inviter_id, 2, reason=f"{after.mention} got Striker role", guild_id=guild.id, invitee_id=after.id)
+            await add_points(inviter_id, 2, guild_id=guild.id, invitee_id=after.id, reason="got Striker role")
             await set_awarded_flags(after.id, striker_awarded=True)
         elif striker_role.id in removed and inviter_record["striker_awarded"]:
-            await add_points(inviter_id, -2, reason=f"{after.mention} lost Striker role", guild_id=guild.id, invitee_id=after.id)
+            await add_points(inviter_id, -2, guild_id=guild.id, invitee_id=after.id, reason="lost Striker role")
             await set_awarded_flags(after.id, striker_awarded=False)
 
+
 @bot.event
-async def on_member_remove(member):
+async def on_member_remove(member: discord.Member):
     guild = member.guild
     inviter_record = await get_inviter_for_invitee(member.id)
     if not inviter_record or not inviter_record["valid_account"]:
         return
+
     inviter_id = inviter_record["inviter_id"]
+
     if inviter_record["members_awarded"]:
-        await add_points(inviter_id, -1, reason=f"{member.mention} left (Members role)", guild_id=guild.id, invitee_id=member.id)
-    if inviter_record["striker_awarded"]:
-        await add_points(inviter_id, -2, reason=f"{member.mention} left (Striker role)", guild_id=guild.id, invitee_id=member.id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
-        await db.commit()
+        await add_points(inviter_id, -1, guild_id=guild.id, invitee_id=member.id, reason="invitee left with Members role")
+        await set_awarded_fl
+
 
 # -------------------- INVITE CREATE/DELETE --------------------
 @bot.event
