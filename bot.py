@@ -294,19 +294,20 @@ async def leaderboard(interaction: discord.Interaction):
         await interaction.followup.send("No points yet.")
         return
 
-    # Header & description
-    title = "🏆 BetStrike Monthly Invite Leaderboard 🏆"
-    description = (
-        "💰 $1,000 Monthly Prize Pool! 💰\n"
-        "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-        "✨ Top 10 inviters get amazing rewards! ✨"
+    embed = discord.Embed(
+        title="⠀⠀⠀⠀⠀⠀🏆 BetStrike Monthly Invite Leaderboard 🏆",
+        description=(
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 $1,000 Monthly Prize Pool! 💰\n"
+            "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
+            "⠀⠀⠀⠀⠀⠀⠀⠀✨ Top 10 inviters get amazing rewards! ✨"
+        ),
+        color=discord.Color.from_str("#a16bff"),
+        timestamp=datetime.now(timezone.utc)
     )
 
-    # Top 10 formatting with invisible padding for visual centering
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
 
-    leaderboard_lines = []
     for i in range(10):
         if i < len(rows):
             uid, pts = rows[i]
@@ -314,20 +315,15 @@ async def leaderboard(interaction: discord.Interaction):
         else:
             name = "— No one yet —"
             pts = 0
-        # Add invisible spaces to align with title visually
-        leaderboard_lines.append(f"⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name}   {pts} pts 💵 ${prize_map[i]}")
-
-    # Combine description + leaderboard
-    full_desc = f"{description}\n\n" + "\n".join(leaderboard_lines)
-
-    embed = discord.Embed(
-        title=title,
-        description=full_desc,
-        color=discord.Color.from_str("#a16bff"),
-        timestamp=datetime.now(timezone.utc)
-    )
+        # Add 5 more invisible spaces for better centering
+        embed.add_field(
+            name="‎",  # invisible character
+            value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}",
+            inline=False
+        )
 
     await interaction.followup.send(embed=embed)
+
 
 
 # /reset
