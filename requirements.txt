@@ -1,5 +1,4 @@
 discord.py>=2.3.2
 aiosqlite>=0.17.0
-python-dotenv>=0.21.0
 aiosmtplib>=2.0.0
-
+python-dotenv>=0.21.0
