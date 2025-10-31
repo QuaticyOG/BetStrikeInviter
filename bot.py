@@ -83,7 +83,7 @@ async def get_inviter_points(user_id: int) -> int:
         return row[0] if row else 0
 
 async def add_points(user_id: int, amount: int, reason: str = None, guild_id: int = None, invitee_id: int = None):
-    """Add or subtract points and log the change."""
+    """Add or subtract points and log the change in a clean, readable format with spacing and bold text."""
     uid = str(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (uid,))
@@ -96,20 +96,24 @@ async def add_points(user_id: int, amount: int, reason: str = None, guild_id: in
         await db.commit()
 
     if guild_id and reason and invitee_id:
-        # send log to log channel
+        # fetch log channel
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT channel_id FROM log_channel WHERE guild_id = ?", (str(guild_id),))
             row = await cur.fetchone()
         if row:
             channel = bot.get_channel(int(row[0]))
             if channel:
-                points_text = "point" if abs(amount) == 1 else "points"
-                log_message = (
-                    f"✅ <@{user_id}> {'gained' if amount > 0 else 'lost'} {abs(amount)} {points_text}\n"
-                    f"   Reason: <@{invitee_id}> {reason}\n"
-                    f"   💎 Total points: {new_points}"
-                )
-                await channel.send(f"```{log_message}```")
+                emoji = "🟢" if amount > 0 else "🔴"
+                action = "**Gained**" if amount > 0 else "**Lost**"
+                lines = [
+                    f"{emoji} <@{user_id}> {action} {abs(amount)} points",
+                    f"      Reason: <@{invitee_id}> {reason}",
+                    f"      💎 Total points: {new_points}",
+                    ""  # extra blank line for readability
+                ]
+                message = "\n".join(lines)
+                await channel.send(message)
+
 
 async def set_invite_map(invitee_id: int, inviter_id: int, valid_account: bool, used_code: str | None):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -174,6 +178,7 @@ async def top_n_inviters(n=10):
         cur = await db.execute("SELECT user_id, points FROM inviters ORDER BY points DESC LIMIT ?", (n,))
         rows = await cur.fetchall()
         return [(int(r[0]), r[1]) for r in rows]
+
 
 
 # -------------------- LOGGING --------------------
