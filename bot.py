@@ -289,23 +289,22 @@ async def points(interaction: discord.Interaction, member: discord.Member | None
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     rows = await top_n_inviters(10)
+
     if not rows:
         await interaction.followup.send("No points yet.")
         return
 
-    embed = discord.Embed(
-        title="⠀⠀⠀⠀⠀⠀🏆 **BetStrike Monthly Invite Leaderboard** 🏆",
-        description=(
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 **__$1,000 Monthly Prize Pool!__** 💰\n"
-            "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-            "⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
-        ),
-        color=discord.Color.from_str("#a16bff"),
-        timestamp=datetime.now(timezone.utc)
+    title = "🏆 BetStrike Monthly Invite Leaderboard 🏆"
+    desc = (
+        "💰 $1,000 Monthly Prize Pool! 💰\n"
+        "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
+        "✨ Top 10 inviters get amazing rewards! ✨"
     )
 
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+
+    leaderboard_lines = []
 
     for i in range(10):
         if i < len(rows):
@@ -315,11 +314,20 @@ async def leaderboard(interaction: discord.Interaction):
             name = "— No one yet —"
             pts = 0
 
-        # Add invisible spaces to "center" under the title
-        line = f"⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} **{pts} pts** 💵 ${prize_map[i]}"
-        embed.add_field(name="\u200b", value=line, inline=False)
+        # Fixed-width formatting with padding
+        # Emoji + Name (max 20 chars) + Points + Prize
+        line = f"{rank_emojis[i]:<2} {name:<20} {pts:>3} pts 💵 ${prize_map[i]:>3}"
+        leaderboard_lines.append(line)
+
+    embed = discord.Embed(
+        title=f"```{title}```",
+        description=f"```{desc}```\n```{chr(10).join(leaderboard_lines)}```",
+        color=discord.Color.from_str("#a16bff"),
+        timestamp=datetime.now(timezone.utc)
+    )
 
     await interaction.followup.send(embed=embed)
+
 
 # /reset
 @tree.command(name="reset", description="Reset all inviter points (Moderators only)")
