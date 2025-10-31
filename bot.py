@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 
 # -------------------- LOAD ENV --------------------
 load_dotenv()
-
 REQUIRED_VARS = ["DISCORD_TOKEN", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECEIVER"]
 missing_vars = [v for v in REQUIRED_VARS if not os.getenv(v)]
 if missing_vars:
@@ -76,25 +75,38 @@ async def init_db():
         await db.commit()
 
 # -------------------- HELPER FUNCTIONS --------------------
-async def add_points(user_id: int, amount: int, reason: str = None, guild_id: int = None):
+async def get_inviter_points(user_id: int) -> int:
+    """Return total points an inviter currently has."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (str(user_id),))
+        row = await cur.fetchone()
+        return row[0] if row else 0
+
+async def add_points(user_id: int, amount: int, reason: str = None, guild_id: int = None, invitee_id: int = None):
+    """Add or subtract points and log the change."""
     uid = str(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (uid,))
         row = await cur.fetchone()
+        new_points = (row[0] + amount) if row else amount
         if row is None:
             await db.execute("INSERT INTO inviters (user_id, points) VALUES (?, ?)", (uid, amount))
         else:
-            await db.execute("UPDATE inviters SET points = ? WHERE user_id = ?", (row[0]+amount, uid))
+            await db.execute("UPDATE inviters SET points = ? WHERE user_id = ?", (new_points, uid))
         await db.commit()
-    if guild_id and reason:
-        # send log
+
+    if guild_id and reason and invitee_id:
+        # send log to log channel
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute("SELECT channel_id FROM log_channel WHERE guild_id = ?", (str(guild_id),))
             row = await cur.fetchone()
         if row:
             channel = bot.get_channel(int(row[0]))
             if channel:
-                await channel.send(f"✅ <@{uid}> {amount:+} points ({reason})")
+                await channel.send(
+                    f"✅ <@{user_id}> {'gained' if amount>0 else 'lost'} {abs(amount)} points because <@{invitee_id}> {reason}.\n"
+                    f"💎 Total points: {new_points}"
+                )
 
 async def set_invite_map(invitee_id: int, inviter_id: int, valid_account: bool, used_code: str | None):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -147,9 +159,7 @@ async def get_creator_by_code(code: str):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT creator_id FROM invite_links WHERE code = ?", (code,))
         row = await cur.fetchone()
-        if row:
-            return int(row[0])
-        return None
+        return int(row[0]) if row else None
 
 async def clear_all_points():
     async with aiosqlite.connect(DB_PATH) as db:
@@ -162,19 +172,31 @@ async def top_n_inviters(n=10):
         rows = await cur.fetchall()
         return [(int(r[0]), r[1]) for r in rows]
 
+# -------------------- LOGGING --------------------
+async def set_log_channel(guild_id: int, channel_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT OR REPLACE INTO log_channel (guild_id, channel_id) VALUES (?, ?)", (str(guild_id), str(channel_id)))
+        await db.commit()
+
+async def get_log_channel(guild_id: int) -> discord.TextChannel | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT channel_id FROM log_channel WHERE guild_id = ?", (str(guild_id),))
+        row = await cur.fetchone()
+        if row:
+            return bot.get_channel(int(row[0]))
+    return None
+
 # -------------------- EMAIL --------------------
 async def send_leaderboard_email(top10):
     msg = EmailMessage()
     msg["Subject"] = "🏆 Monthly BetStrike Leaderboard Results"
     msg["From"] = EMAIL_SENDER
     msg["To"] = EMAIL_RECEIVER
-
     if not top10:
         content = "No leaderboard data this month."
     else:
         content = "\n".join([f"{i+1}. <@{uid}> — {pts} pts" for i, (uid, pts) in enumerate(top10)])
     msg.set_content(content)
-
     try:
         await aiosmtplib.send(
             msg,
@@ -199,7 +221,6 @@ async def full_monthly_reset():
     print("[DB] Full leaderboard and invite data reset.")
 
 monthly_reset_done_today = False
-
 @tasks.loop(minutes=1)
 async def monthly_reset_check():
     global monthly_reset_done_today
@@ -225,7 +246,6 @@ async def before_monthly_reset_check():
 async def on_ready():
     await init_db()
     guild_invites_cache.clear()
-
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
@@ -233,223 +253,15 @@ async def on_ready():
         except Exception as e:
             print(f"[WARN] Could not fetch invites for {guild.name}: {e}")
             guild_invites_cache[guild.id] = {}
-
     print(f"✅ Bot ready: {bot.user}")
-
-    # Set presence
     await bot.change_presence(
         activity=discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀"),
         status=discord.Status.online
     )
-
-    # --- Sync commands to your server instantly ---
     guild = discord.Object(id=1433510848382370016)
     try:
         synced = await tree.sync(guild=guild)
         print(f"[SYNC] Synced {len(synced)} commands to guild {guild.id}.")
     except Exception as e:
         print(f"[SYNC ERROR] {e}")
-
-    # Start monthly reset loop
-    monthly_reset_check.start()
-
-
-# -------------------- COMMANDS --------------------
-# /getinvite
-@tree.command(name="getinvite", description="Generate your personal server invite link")
-async def getinvite(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    channel = interaction.channel
-    try:
-        invite = await channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Invite for {interaction.user}")
-        await save_invite_link(invite.code, interaction.user.id)
-        await interaction.followup.send(f"Your invite link: {invite.url}", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.followup.send("I don't have permission to create invites in this channel.", ephemeral=True)
-
-# /points
-@tree.command(name="points", description="Check how many points you or another user have")
-@app_commands.describe(member="The user you want to check (optional)")
-async def points(interaction: discord.Interaction, member: discord.Member | None = None):
-    await interaction.response.defer(ephemeral=True)
-    target = member or interaction.user
-    user_id = str(target.id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (user_id,))
-        row = await cur.fetchone()
-    pts = row[0] if row else 0
-    embed = discord.Embed(title="💜 BETSTRIKE POINTS 💜",
-                          description=f"🏆 **{target.name}** has **{pts} points!**",
-                          color=discord.Color.from_str("#a16bff"),
-                          timestamp=datetime.now(timezone.utc))
-    await interaction.followup.send(embed=embed, ephemeral=True)
-
-# /leaderboard
-@tree.command(name="leaderboard", description="Show top 10 inviters")
-async def leaderboard(interaction: discord.Interaction):
-    await interaction.response.defer()
-    rows = await top_n_inviters(10)
-
-    if not rows:
-        await interaction.followup.send("No points yet.")
-        return
-
-    embed = discord.Embed(
-        title="⠀⠀⠀⠀⠀⠀🏆 BetStrike Monthly Invite Leaderboard 🏆",
-        description=(
-            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 $1,000 Monthly Prize Pool! 💰\n"
-            "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
-            "⠀⠀⠀⠀⠀⠀⠀⠀✨ Top 10 inviters get amazing rewards! ✨"
-        ),
-        color=discord.Color.from_str("#a16bff"),
-        timestamp=datetime.now(timezone.utc)
-    )
-
-    rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
-
-    for i in range(10):
-        if i < len(rows):
-            uid, pts = rows[i]
-            name = f"<@{uid}>"
-        else:
-            name = "— No one yet —"
-            pts = 0
-        # Add 5 more invisible spaces for better centering
-        embed.add_field(
-            name="‎",  # invisible character
-            value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}",
-            inline=False
-        )
-
-    await interaction.followup.send(embed=embed)
-
-
-
-# /reset
-@tree.command(name="reset", description="Reset all inviter points (Moderators only)")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def reset(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    await clear_all_points()
-    await interaction.followup.send("All inviter points reset to 0.", ephemeral=True)
-
-# /testreset
-@tree.command(name="testreset", description="(Admin only) Test monthly reset + email")
-@app_commands.checks.has_permissions(administrator=True)
-async def testreset(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    top10 = await top_n_inviters(10)
-    await send_leaderboard_email(top10)
-    await full_monthly_reset()
-    await interaction.followup.send("✅ Test monthly reset complete.", ephemeral=True)
-
-# /adjustpoints
-@tree.command(name="adjustpoints", description="Admin: Adjust points for a user")
-@app_commands.describe(user="Target user", amount="Points to add/subtract", reason="Reason for adjustment")
-@app_commands.checks.has_permissions(administrator=True)
-async def adjustpoints(interaction: discord.Interaction, user: discord.Member, amount: int, reason: str):
-    await interaction.response.defer(ephemeral=True)
-    await add_points(user.id, amount, reason=reason, guild_id=interaction.guild.id)
-    await interaction.followup.send(f"✅ Adjusted {amount} points for {user.mention}. Reason: {reason}", ephemeral=True)
-
-# /setuplog
-@tree.command(name="setuplog", description="Admin: Set the log channel for point events")
-@app_commands.describe(channel="Channel to send point logs")
-@app_commands.checks.has_permissions(administrator=True)
-async def setuplog(interaction: discord.Interaction, channel: discord.TextChannel):
-    await interaction.response.defer(ephemeral=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO log_channel (guild_id, channel_id) VALUES (?, ?)",
-                         (str(interaction.guild.id), str(channel.id)))
-        await db.commit()
-    await interaction.followup.send(f"✅ Log channel set to {channel.mention}", ephemeral=True)
-
-# -------------------- MEMBER EVENTS --------------------
-@bot.event
-async def on_member_join(member):
-    guild = member.guild
-    account_age = datetime.now(timezone.utc) - member.created_at
-    valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
-    try:
-        invites_after = await guild.invites()
-    except Exception:
-        invites_after = []
-    used_inviter = None
-    used_code = None
-    before_cache = guild_invites_cache.get(guild.id, {})
-    for inv in invites_after:
-        if inv.uses > before_cache.get(inv.code, 0):
-            used_code = inv.code
-            creator_id = await get_creator_by_code(inv.code)
-            used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
-            break
-    guild_invites_cache[guild.id] = {inv.code: inv.uses for inv in invites_after}
-    if used_inviter:
-        await set_invite_map(member.id, used_inviter, valid_account, used_code)
-        members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
-        striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
-        if members_role and members_role in member.roles:
-            await add_points(used_inviter, 1, reason=f"{member.mention} has Members role", guild_id=guild.id)
-            await set_awarded_flags(member.id, members_awarded=True)
-        if striker_role and striker_role in member.roles:
-            await add_points(used_inviter, 2, reason=f"{member.mention} has Striker role", guild_id=guild.id)
-            await set_awarded_flags(member.id, striker_awarded=True)
-
-@bot.event
-async def on_member_update(before, after):
-    guild = after.guild
-    inviter_record = await get_inviter_for_invitee(after.id)
-    if not inviter_record or not inviter_record["valid_account"]:
-        return
-    inviter_id = inviter_record["inviter_id"]
-    before_roles = set(r.id for r in before.roles)
-    after_roles = set(r.id for r in after.roles)
-    added = after_roles - before_roles
-    removed = before_roles - after_roles
-    members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
-    striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
-    if members_role:
-        if members_role.id in added and not inviter_record["members_awarded"]:
-            await add_points(inviter_id, 1, reason=f"{after.mention} got Members role", guild_id=guild.id)
-            await set_awarded_flags(after.id, members_awarded=True)
-        elif members_role.id in removed and inviter_record["members_awarded"]:
-            await add_points(inviter_id, -1, reason=f"{after.mention} lost Members role", guild_id=guild.id)
-            await set_awarded_flags(after.id, members_awarded=False)
-    if striker_role:
-        if striker_role.id in added and not inviter_record["striker_awarded"]:
-            await add_points(inviter_id, 2, reason=f"{after.mention} got Striker role", guild_id=guild.id)
-            await set_awarded_flags(after.id, striker_awarded=True)
-        elif striker_role.id in removed and inviter_record["striker_awarded"]:
-            await add_points(inviter_id, -2, reason=f"{after.mention} lost Striker role", guild_id=guild.id)
-            await set_awarded_flags(after.id, striker_awarded=False)
-
-@bot.event
-async def on_member_remove(member):
-    guild = member.guild
-    inviter_record = await get_inviter_for_invitee(member.id)
-    if not inviter_record or not inviter_record["valid_account"]:
-        return
-    inviter_id = inviter_record["inviter_id"]
-    if inviter_record["members_awarded"]:
-        await add_points(inviter_id, -1, reason=f"{member.mention} left (Members role)", guild_id=guild.id)
-    if inviter_record["striker_awarded"]:
-        await add_points(inviter_id, -2, reason=f"{member.mention} left (Striker role)", guild_id=guild.id)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
-        await db.commit()
-
-# -------------------- INVITE CREATE/DELETE --------------------
-@bot.event
-async def on_invite_create(invite):
-    guild_invites_cache.setdefault(invite.guild.id, {})[invite.code] = invite.uses
-
-@bot.event
-async def on_invite_delete(invite):
-    guild_cache = guild_invites_cache.get(invite.guild.id, {})
-    guild_cache.pop(invite.code, None)
-
-# -------------------- RUN BOT --------------------
-if __name__ == "__main__":
-    print("Starting bot...")
-    bot.run(TOKEN)
+    monthly_reset_check
