@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 
 # -------------------- LOAD ENV --------------------
 load_dotenv()
-
 REQUIRED_VARS = ["DISCORD_TOKEN", "EMAIL_SENDER", "EMAIL_PASSWORD", "EMAIL_RECEIVER"]
 missing_vars = [v for v in REQUIRED_VARS if not os.getenv(v)]
 if missing_vars:
@@ -25,8 +24,8 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
 
 # -------------------- CONFIG --------------------
-MEMBERS_ROLE_NAME = "Members"   # +1 point
-STRIKER_ROLE_NAME = "Striker"   # +2 points
+MEMBERS_ROLE_NAME = "Members"
+STRIKER_ROLE_NAME = "Striker"
 ACCOUNT_MIN_AGE_DAYS = 30
 DB_PATH = "/data/db/betstrike.db"
 
@@ -71,7 +70,7 @@ async def init_db():
         );""")
         await db.commit()
 
-# -------------------- HELPER FUNCTIONS --------------------
+# -------------------- HELPERS --------------------
 async def add_points(user_id: int, amount: int):
     uid = str(user_id)
     async with aiosqlite.connect(DB_PATH) as db:
@@ -126,7 +125,7 @@ async def set_awarded_flags(invitee_id: int, members_awarded: bool = None, strik
 
 async def save_invite_link(code: str, creator_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO invite_links (code, creator_id, created_at) VALUES (?, ?, ?)", 
+        await db.execute("INSERT OR REPLACE INTO invite_links (code, creator_id, created_at) VALUES (?, ?, ?)",
                          (code, str(creator_id), datetime.now(timezone.utc).isoformat()))
         await db.commit()
 
@@ -175,7 +174,7 @@ async def send_leaderboard_email(top10):
     except Exception as e:
         print(f"[EMAIL ERROR] {e}")
 
-# -------------------- MONTHLY RESET --------------------
+# -------------------- FULL RESET --------------------
 async def full_monthly_reset():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM inviters;")
@@ -185,6 +184,7 @@ async def full_monthly_reset():
         await db.commit()
     print("[DB] Full leaderboard and invite data reset.")
 
+# -------------------- MONTHLY RESET LOOP --------------------
 monthly_reset_done_today = False
 
 @tasks.loop(minutes=1)
@@ -207,7 +207,7 @@ async def before_monthly_reset_check():
     await bot.wait_until_ready()
     print("[SCHEDULE] Monthly reset task started.")
 
-# -------------------- DISCORD EVENTS --------------------
+# -------------------- EVENTS --------------------
 @bot.event
 async def on_ready():
     await init_db()
@@ -228,17 +228,140 @@ async def on_ready():
         await tree.sync()
     except Exception as e:
         print(f"[SYNC ERROR] {e}")
-    monthly_reset_check.start()  # start monthly reset after ready
+    monthly_reset_check.start()
 
-# -------------------- COMMAND: TEST RESET --------------------
-@tree.command(name="testreset", description="(Admin only) Test the monthly reset and email now")
+# -------------------- INVITE TRACKING --------------------
+@bot.event
+async def on_member_join(member):
+    guild = member.guild
+    account_age = datetime.now(timezone.utc) - member.created_at
+    valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
+
+    try:
+        invites_after = await guild.invites()
+    except Exception:
+        invites_after = []
+
+    used_inviter = None
+    used_code = None
+    before_cache = guild_invites_cache.get(guild.id, {})
+
+    # find used invite
+    for inv in invites_after:
+        before_uses = before_cache.get(inv.code, 0)
+        if inv.uses > before_uses:
+            used_code = inv.code
+            creator_id = await get_creator_by_code(inv.code)
+            used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
+            break
+
+    guild_invites_cache[guild.id] = {invite.code: invite.uses for invite in invites_after}
+
+    if used_inviter:
+        await set_invite_map(member.id, used_inviter, valid_account, used_code)
+
+        members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+        striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+
+        if members_role and members_role in member.roles:
+            inviter_record = await get_inviter_for_invitee(member.id)
+            if not inviter_record["members_awarded"]:
+                await add_points(used_inviter, 1)
+                await set_awarded_flags(member.id, members_awarded=True)
+
+        if striker_role and striker_role in member.roles:
+            inviter_record = await get_inviter_for_invitee(member.id)
+            if not inviter_record["striker_awarded"]:
+                await add_points(used_inviter, 2)
+                await set_awarded_flags(member.id, striker_awarded=True)
+
+@bot.event
+async def on_member_remove(member):
+    inviter_record = await get_inviter_for_invitee(member.id)
+    if not inviter_record or inviter_record["inviter_id"] == 0 or not inviter_record["valid_account"]:
+        return
+
+    inviter_id = inviter_record["inviter_id"]
+    members_points = 1 if inviter_record["members_awarded"] else 0
+    striker_points = 2 if inviter_record["striker_awarded"] else 0
+    total_deduction = members_points + striker_points
+
+    if total_deduction:
+        await add_points(inviter_id, -total_deduction)
+        await set_awarded_flags(member.id, members_awarded=False, striker_awarded=False)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
+        await db.commit()
+
+# -------------------- COMMANDS --------------------
+@tree.command(name="getinvite", description="Generate your personal server invite link")
+async def getinvite(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    channel = interaction.channel
+    try:
+        invite = await channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Invite for {interaction.user}")
+        await save_invite_link(invite.code, interaction.user.id)
+        await interaction.followup.send(f"Your invite link: {invite.url}", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("I don't have permission to create invites in this channel.", ephemeral=True)
+
+@tree.command(name="points", description="Check how many points you or another user have")
+@app_commands.describe(member="The user you want to check (optional)")
+async def points(interaction: discord.Interaction, member: discord.Member | None = None):
+    await interaction.response.defer(ephemeral=True)
+    target = member or interaction.user
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT points FROM inviters WHERE user_id = ?", (str(target.id),))
+        row = await cur.fetchone()
+    points_value = row[0] if row else 0
+    await interaction.followup.send(f"{target.mention} has {points_value} points.", ephemeral=True)
+
+@tree.command(name="leaderboard", description="Show top 10 inviters")
+async def leaderboard(interaction: discord.Interaction):
+    await interaction.response.defer()
+    rows = await top_n_inviters(10)
+    if not rows:
+        await interaction.followup.send("No points yet.", ephemeral=True)
+        return
+
+    embed = discord.Embed(title="🏆 Invite Leaderboard", color=discord.Color.purple(), timestamp=datetime.now(timezone.utc))
+    rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+
+    for i in range(10):
+        if i < len(rows):
+            user_id, pts = rows[i]
+            name = f"<@{user_id}>"
+        else:
+            name = "— No one yet —"
+            pts = 0
+        line = f"{rank_emojis[i]} {name} — {pts} pts | 💵 ${prize_map[i]}"
+        embed.add_field(name="\u200b", value=line, inline=False)
+    await interaction.followup.send(embed=embed)
+
+@tree.command(name="reset", description="Reset all inviter points (Moderators only)")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def reset(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    await clear_all_points()
+    await interaction.followup.send("All inviter points reset.", ephemeral=True)
+
+@tree.command(name="testreset", description="(Admin only) Test monthly reset and email")
 @app_commands.checks.has_permissions(administrator=True)
 async def testreset(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     top10 = await top_n_inviters(10)
     await send_leaderboard_email(top10)
     await full_monthly_reset()
-    await interaction.followup.send("✅ Test monthly reset complete. Email sent and leaderboard cleared.", ephemeral=True)
+    await interaction.followup.send("✅ Test monthly reset complete.", ephemeral=True)
+
+@tree.command(name="sync", description="Sync slash commands (admin only)")
+@app_commands.checks.has_permissions(administrator=True)
+async def sync(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    synced = await tree.sync()
+    await interaction.followup.send(f"✅ Synced {len(synced)} commands.", ephemeral=True)
 
 # -------------------- RUN BOT --------------------
 if __name__ == "__main__":
