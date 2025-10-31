@@ -206,13 +206,13 @@ async def send_leaderboard_email(top10):
         content = "No leaderboard data this month."
     else:
         rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-        lines = ["🏆 **BetStrike Monthly Leaderboard Results** 🏆\n"]
+        lines = ["🏆 BetStrike Monthly Leaderboard Results 🏆\n"]
 
         for i, (uid, pts) in enumerate(top10):
             user = bot.get_user(uid)
             username = user.name if user else f"User {uid}"
             emoji = rank_emojis[i] if i < len(rank_emojis) else f"{i+1}."
-            lines.append(f"{emoji} **{username}** <@{uid}> — {pts} pts")
+            lines.append(f"{emoji} {username} <@{uid}> — {pts} pts")
 
         content = "\n".join(lines)
 
