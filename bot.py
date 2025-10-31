@@ -225,6 +225,7 @@ async def before_monthly_reset_check():
 async def on_ready():
     await init_db()
     guild_invites_cache.clear()
+
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
@@ -232,16 +233,26 @@ async def on_ready():
         except Exception as e:
             print(f"[WARN] Could not fetch invites for {guild.name}: {e}")
             guild_invites_cache[guild.id] = {}
+
     print(f"✅ Bot ready: {bot.user}")
+
+    # Set presence
     await bot.change_presence(
         activity=discord.Activity(type=discord.ActivityType.watching, name="the leaderboard 👀"),
         status=discord.Status.online
     )
+
+    # --- Sync commands to your server instantly ---
+    guild = discord.Object(id=1433510848382370016)
     try:
-        await tree.sync()
+        synced = await tree.sync(guild=guild)
+        print(f"[SYNC] Synced {len(synced)} commands to guild {guild.id}.")
     except Exception as e:
         print(f"[SYNC ERROR] {e}")
-    monthly_reset_check.start()  # start monthly reset after ready
+
+    # Start monthly reset loop
+    monthly_reset_check.start()
+
 
 # -------------------- COMMANDS --------------------
 # /getinvite
