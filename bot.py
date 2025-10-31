@@ -298,10 +298,11 @@ async def points(interaction: discord.Interaction, member: discord.Member | None
 @tree.command(name="leaderboard", description="Show top 10 inviters")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
-    rows = await top_n_inviters(10)
-    if not rows:
-        await interaction.followup.send("No points yet.")
-        return
+
+    rows = await top_n_inviters(10)  # get top 10 actual points
+    rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+
     embed = discord.Embed(
         title="⠀⠀⠀⠀⠀⠀🏆 BetStrike Monthly Invite Leaderboard 🏆",
         description=(
@@ -312,8 +313,8 @@ async def leaderboard(interaction: discord.Interaction):
         color=discord.Color.from_str("#a16bff"),
         timestamp=datetime.now(timezone.utc)
     )
-    rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+
+    # Ensure there are always 10 entries
     for i in range(10):
         if i < len(rows):
             uid, pts = rows[i]
@@ -321,9 +322,15 @@ async def leaderboard(interaction: discord.Interaction):
         else:
             name = "— No one yet —"
             pts = 0
-        # 4 extra spaces for centering
-        embed.add_field(name="‎", value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}", inline=False)
+        # Add extra spaces for perfect centering (you said 4 extra)
+        embed.add_field(
+            name="‎",  # invisible character
+            value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}",
+            inline=False
+        )
+
     await interaction.followup.send(embed=embed)
+
 
 # -------------------- ADMIN COMMANDS --------------------
 # /removepoints
