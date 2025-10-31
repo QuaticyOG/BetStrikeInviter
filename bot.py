@@ -280,7 +280,7 @@ async def points(interaction: discord.Interaction, member: discord.Member | None
     pts = row[0] if row else 0
     embed = discord.Embed(title="💜 BETSTRIKE POINTS 💜",
                           description=f"🏆 **{target.name}** has **{pts} points!**",
-                          color=discord.Color.purple(),
+                          color=discord.Color.from_str("#a16bff"),
                           timestamp=datetime.now(timezone.utc))
     await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -292,8 +292,14 @@ async def leaderboard(interaction: discord.Interaction):
     if not rows:
         await interaction.followup.send("No points yet.")
         return
-    embed = discord.Embed(title="🏆 Invite Leaderboard",
-                          color=discord.Color.purple(),
+    embed = discord.Embed(
+        title="🏆 BetStrike Monthly Invite Leaderboard 🏆",
+        description=(
+            "💰 **__$1,000 Monthly Prize Pool!__**\n"
+            "Invite your friends and earn points to climb the leaderboard! 💸\n\n"
+            "✨ *Top 10 inviters get amazing rewards!*"
+        ),
+                          color=discord.Color.from_str("#a16bff"),
                           timestamp=datetime.now(timezone.utc))
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
