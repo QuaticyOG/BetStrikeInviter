@@ -381,13 +381,20 @@ async def reset(interaction: discord.Interaction):
     await interaction.response.send_message("All inviter points reset to 0.", ephemeral=True)
 
 # /testreset
-@tree.command(name="testreset", description="(Admin only) Test monthly reset + email")
-@app_commands.checks.has_permissions(administrator=True)
+@bot.tree.command(name="testreset", description="Resets all points for testing")
 async def testreset(interaction: discord.Interaction):
-    top10 = await top_n_inviters(10)
-    await send_leaderboard_email(top10)
-    await full_monthly_reset()
-    await interaction.response.send_message("✅ Test monthly reset complete.", ephemeral=True)
+    # Defer response to prevent Discord timeout
+    await interaction.response.defer(ephemeral=True)
+
+    # Clear all points
+    await clear_all_points()
+
+    # Send confirmation
+    await interaction.followup.send(
+        "✅ All inviter points have been cleared!\n"
+        "💎 Leaderboard is now reset for testing purposes."
+    )
+
 
 # -------------------- MEMBER EVENTS --------------------
 @bot.event
