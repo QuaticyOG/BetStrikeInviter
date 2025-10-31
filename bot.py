@@ -292,6 +292,7 @@ async def leaderboard(interaction: discord.Interaction):
     if not rows:
         await interaction.followup.send("No points yet.")
         return
+
     embed = discord.Embed(
         title="⠀⠀⠀⠀⠀⠀🏆 **BetStrike Monthly Invite Leaderboard** 🏆",
         description=(
@@ -299,10 +300,13 @@ async def leaderboard(interaction: discord.Interaction):
             "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
             "⠀⠀⠀⠀⠀⠀⠀⠀✨ **Top 10** inviters get amazing rewards! ✨"
         ),
-                          color=discord.Color.from_str("#a16bff"),
-                          timestamp=datetime.now(timezone.utc))
+        color=discord.Color.from_str("#a16bff"),
+        timestamp=datetime.now(timezone.utc)
+    )
+
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
     prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+
     for i in range(10):
         if i < len(rows):
             uid, pts = rows[i]
@@ -310,7 +314,11 @@ async def leaderboard(interaction: discord.Interaction):
         else:
             name = "— No one yet —"
             pts = 0
-        embed.add_field(name="‎", value=f"{rank_emojis[i]} {name} **{pts} pts** 💵 ${prize_map[i]}", inline=False)
+
+        # Add invisible spaces to "center" under the title
+        line = f"⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} **{pts} pts** 💵 ${prize_map[i]}"
+        embed.add_field(name="\u200b", value=line, inline=False)
+
     await interaction.followup.send(embed=embed)
 
 # /reset
