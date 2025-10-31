@@ -264,4 +264,200 @@ async def on_ready():
         print(f"[SYNC] Synced {len(synced)} commands to guild {guild.id}.")
     except Exception as e:
         print(f"[SYNC ERROR] {e}")
-    monthly_reset_check
+    monthly_reset_check.start()
+
+# -------------------- COMMANDS --------------------
+# /getinvite
+@tree.command(name="getinvite", description="Generate your personal server invite link")
+async def getinvite(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    channel = interaction.channel
+    try:
+        invite = await channel.create_invite(max_age=0, max_uses=0, unique=True, reason=f"Invite for {interaction.user}")
+        await save_invite_link(invite.code, interaction.user.id)
+        await interaction.followup.send(f"Your invite link: {invite.url}", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("I don't have permission to create invites in this channel.", ephemeral=True)
+
+# /points
+@tree.command(name="points", description="Check your or another user's points")
+@app_commands.describe(member="Optional: user to check")
+async def points(interaction: discord.Interaction, member: discord.Member | None = None):
+    await interaction.response.defer(ephemeral=True)
+    target = member or interaction.user
+    pts = await get_inviter_points(target.id)
+    embed = discord.Embed(
+        title="💜 BETSTRIKE POINTS 💜",
+        description=f"🏆 **{target.name}** has **{pts} points!**",
+        color=discord.Color.from_str("#a16bff"),
+        timestamp=datetime.now(timezone.utc)
+    )
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+# /leaderboard
+@tree.command(name="leaderboard", description="Show top 10 inviters")
+async def leaderboard(interaction: discord.Interaction):
+    await interaction.response.defer()
+    rows = await top_n_inviters(10)
+    if not rows:
+        await interaction.followup.send("No points yet.")
+        return
+    embed = discord.Embed(
+        title="⠀⠀⠀⠀⠀⠀🏆 BetStrike Monthly Invite Leaderboard 🏆",
+        description=(
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀💰 $1,000 Monthly Prize Pool! 💰\n"
+            "💸 Invite your friends and earn points to climb the leaderboard! 💸\n\n"
+            "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀✨ Top 10 inviters get amazing rewards! ✨"
+        ),
+        color=discord.Color.from_str("#a16bff"),
+        timestamp=datetime.now(timezone.utc)
+    )
+    rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+    for i in range(10):
+        if i < len(rows):
+            uid, pts = rows[i]
+            name = f"<@{uid}>"
+        else:
+            name = "— No one yet —"
+            pts = 0
+        # 4 extra spaces for centering
+        embed.add_field(name="‎", value=f"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{rank_emojis[i]} {name} {pts} pts 💵 ${prize_map[i]}", inline=False)
+    await interaction.followup.send(embed=embed)
+
+# -------------------- ADMIN COMMANDS --------------------
+# /removepoints
+@tree.command(name="removepoints", description="Remove points from a user (admin only)")
+@app_commands.describe(member="User to remove points from", points="Number of points to remove")
+@app_commands.checks.has_permissions(administrator=True)
+async def removepoints(interaction: discord.Interaction, member: discord.Member, points: int):
+    await interaction.response.defer(ephemeral=True)
+    inviter_record = await get_inviter_for_invitee(member.id)
+    guild_id = interaction.guild.id
+    if inviter_record:
+        await add_points(inviter_record["inviter_id"], -points, f"admin removed {points} points", guild_id=guild_id, invitee_id=member.id)
+        await interaction.followup.send(f"✅ Removed {points} points from <@{member.id}>'s inviter.", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ Could not find inviter for this user.", ephemeral=True)
+
+# /adjustpoints
+@tree.command(name="adjustpoints", description="Admin: Adjust points for a user")
+@app_commands.describe(user="Target user", amount="Points to add/subtract", reason="Reason for adjustment")
+@app_commands.checks.has_permissions(administrator=True)
+async def adjustpoints(interaction: discord.Interaction, user: discord.Member, amount: int, reason: str):
+    await interaction.response.defer(ephemeral=True)
+    await add_points(user.id, amount, reason, guild_id=interaction.guild.id, invitee_id=user.id)
+    await interaction.followup.send(f"✅ Adjusted {amount} points for {user.mention}. Reason: {reason}", ephemeral=True)
+
+# /setuplog
+@tree.command(name="setuplog", description="Admin: Set the log channel for point events")
+@app_commands.describe(channel="Channel to send point logs")
+@app_commands.checks.has_permissions(administrator=True)
+async def setuplog(interaction: discord.Interaction, channel: discord.TextChannel):
+    await set_log_channel(interaction.guild.id, channel.id)
+    await interaction.response.send_message(f"✅ Log channel set to {channel.mention}", ephemeral=True)
+
+# /reset
+@tree.command(name="reset", description="Reset all inviter points (Moderators only)")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def reset(interaction: discord.Interaction):
+    await clear_all_points()
+    await interaction.response.send_message("All inviter points reset to 0.", ephemeral=True)
+
+# /testreset
+@tree.command(name="testreset", description="(Admin only) Test monthly reset + email")
+@app_commands.checks.has_permissions(administrator=True)
+async def testreset(interaction: discord.Interaction):
+    top10 = await top_n_inviters(10)
+    await send_leaderboard_email(top10)
+    await full_monthly_reset()
+    await interaction.response.send_message("✅ Test monthly reset complete.", ephemeral=True)
+
+# -------------------- MEMBER EVENTS --------------------
+@bot.event
+async def on_member_join(member):
+    guild = member.guild
+    account_age = datetime.now(timezone.utc) - member.created_at
+    valid_account = account_age >= timedelta(days=ACCOUNT_MIN_AGE_DAYS)
+    try:
+        invites_after = await guild.invites()
+    except Exception:
+        invites_after = []
+    used_inviter = None
+    used_code = None
+    before_cache = guild_invites_cache.get(guild.id, {})
+    for inv in invites_after:
+        if inv.uses > before_cache.get(inv.code, 0):
+            used_code = inv.code
+            creator_id = await get_creator_by_code(inv.code)
+            used_inviter = creator_id or (inv.inviter.id if inv.inviter else None)
+            break
+    guild_invites_cache[guild.id] = {inv.code: inv.uses for inv in invites_after}
+    if used_inviter:
+        await set_invite_map(member.id, used_inviter, valid_account, used_code)
+        members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+        striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+        if members_role and members_role in member.roles:
+            await add_points(used_inviter, 1, reason=f"{member.mention} has Members role", guild_id=guild.id, invitee_id=member.id)
+            await set_awarded_flags(member.id, members_awarded=True)
+        if striker_role and striker_role in member.roles:
+            await add_points(used_inviter, 2, reason=f"{member.mention} has Striker role", guild_id=guild.id, invitee_id=member.id)
+            await set_awarded_flags(member.id, striker_awarded=True)
+
+@bot.event
+async def on_member_update(before, after):
+    guild = after.guild
+    inviter_record = await get_inviter_for_invitee(after.id)
+    if not inviter_record or not inviter_record["valid_account"]:
+        return
+    inviter_id = inviter_record["inviter_id"]
+    before_roles = set(r.id for r in before.roles)
+    after_roles = set(r.id for r in after.roles)
+    added = after_roles - before_roles
+    removed = before_roles - after_roles
+    members_role = discord.utils.get(guild.roles, name=MEMBERS_ROLE_NAME)
+    striker_role = discord.utils.get(guild.roles, name=STRIKER_ROLE_NAME)
+    if members_role:
+        if members_role.id in added and not inviter_record["members_awarded"]:
+            await add_points(inviter_id, 1, reason=f"{after.mention} got Members role", guild_id=guild.id, invitee_id=after.id)
+            await set_awarded_flags(after.id, members_awarded=True)
+        elif members_role.id in removed and inviter_record["members_awarded"]:
+            await add_points(inviter_id, -1, reason=f"{after.mention} lost Members role", guild_id=guild.id, invitee_id=after.id)
+            await set_awarded_flags(after.id, members_awarded=False)
+    if striker_role:
+        if striker_role.id in added and not inviter_record["striker_awarded"]:
+            await add_points(inviter_id, 2, reason=f"{after.mention} got Striker role", guild_id=guild.id, invitee_id=after.id)
+            await set_awarded_flags(after.id, striker_awarded=True)
+        elif striker_role.id in removed and inviter_record["striker_awarded"]:
+            await add_points(inviter_id, -2, reason=f"{after.mention} lost Striker role", guild_id=guild.id, invitee_id=after.id)
+            await set_awarded_flags(after.id, striker_awarded=False)
+
+@bot.event
+async def on_member_remove(member):
+    guild = member.guild
+    inviter_record = await get_inviter_for_invitee(member.id)
+    if not inviter_record or not inviter_record["valid_account"]:
+        return
+    inviter_id = inviter_record["inviter_id"]
+    if inviter_record["members_awarded"]:
+        await add_points(inviter_id, -1, reason=f"{member.mention} left (Members role)", guild_id=guild.id, invitee_id=member.id)
+    if inviter_record["striker_awarded"]:
+        await add_points(inviter_id, -2, reason=f"{member.mention} left (Striker role)", guild_id=guild.id, invitee_id=member.id)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM invite_map WHERE invitee_id = ?", (str(member.id),))
+        await db.commit()
+
+# -------------------- INVITE CREATE/DELETE --------------------
+@bot.event
+async def on_invite_create(invite):
+    guild_invites_cache.setdefault(invite.guild.id, {})[invite.code] = invite.uses
+
+@bot.event
+async def on_invite_delete(invite):
+    guild_cache = guild_invites_cache.get(invite.guild.id, {})
+    guild_cache.pop(invite.code, None)
+
+# -------------------- RUN BOT --------------------
+if __name__ == "__main__":
+    print("Starting bot...")
+    bot.run(TOKEN)
