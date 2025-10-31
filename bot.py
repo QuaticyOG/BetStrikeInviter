@@ -103,10 +103,13 @@ async def add_points(user_id: int, amount: int, reason: str = None, guild_id: in
         if row:
             channel = bot.get_channel(int(row[0]))
             if channel:
-                await channel.send(
-                    f"✅ <@{user_id}> {'gained' if amount>0 else 'lost'} {abs(amount)} points because <@{invitee_id}> {reason}.\n"
-                    f"💎 Total points: {new_points}"
+                points_text = "point" if abs(amount) == 1 else "points"
+                log_message = (
+                    f"✅ <@{user_id}> {'gained' if amount > 0 else 'lost'} {abs(amount)} {points_text}\n"
+                    f"   Reason: <@{invitee_id}> {reason}\n"
+                    f"   💎 Total points: {new_points}"
                 )
+                await channel.send(f"```{log_message}```")
 
 async def set_invite_map(invitee_id: int, inviter_id: int, valid_account: bool, used_code: str | None):
     async with aiosqlite.connect(DB_PATH) as db:
@@ -171,6 +174,7 @@ async def top_n_inviters(n=10):
         cur = await db.execute("SELECT user_id, points FROM inviters ORDER BY points DESC LIMIT ?", (n,))
         rows = await cur.fetchall()
         return [(int(r[0]), r[1]) for r in rows]
+
 
 # -------------------- LOGGING --------------------
 async def set_log_channel(guild_id: int, channel_id: int):
