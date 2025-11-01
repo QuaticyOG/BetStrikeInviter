@@ -322,7 +322,7 @@ async def leaderboard(interaction: discord.Interaction):
 
     rows = await top_n_inviters(10)  # get top 10 actual points
     rank_emojis = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
-    prize_map = ["350","250","200","150","100","50","50","25","25","25"]
+    prize_map = ["350","250","150","60","50","45","35","30","20","10"]
 
     embed = discord.Embed(
         title="⠀⠀⠀⠀⠀⠀🏆 **BetStrike Monthly Invite Leaderboard** 🏆",
